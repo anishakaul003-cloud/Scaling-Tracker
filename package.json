@@ -1,0 +1,32 @@
+{
+  "name": "sheet-navigator",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=20 <21",
+    "npm": ">=10 <11"
+  },
+  "scripts": {
+    "setup": "npm install && npm run check:env",
+    "start": "python3 scripts/dev_server.py",
+    "dev": "npm run start",
+    "snapshot:export": "python3 scripts/export_xlsx_snapshot.py",
+    "check:env": "node scripts/check_env.js",
+    "lint:js": "eslint \"public/**/*.js\"",
+    "lint:css": "stylelint \"public/**/*.css\"",
+    "lint:html": "htmlhint public/index.html",
+    "lint": "run-s lint:js lint:css lint:html",
+    "format:check": "prettier --check \"README.md\" \"public/**/*.{html,css,js,json}\" \"scripts/**/*.js\" \"*.json\"",
+    "format": "prettier --write \"README.md\" \"public/**/*.{html,css,js,json}\" \"scripts/**/*.js\" \"*.json\"",
+    "smoke": "node scripts/smoke_check.js",
+    "check": "run-s check:env lint format:check smoke"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.1",
+    "htmlhint": "^1.7.1",
+    "npm-run-all": "^4.1.5",
+    "prettier": "^3.6.2",
+    "stylelint": "^16.24.0",
+    "stylelint-config-standard": "^39.0.1"
+  }
+}

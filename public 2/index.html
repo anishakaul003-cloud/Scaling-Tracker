@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sheet Navigator</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <h1>Sheets</h1>
+          <p class="muted" id="lastUpdated">Waiting for first sync...</p>
+        </div>
+        <nav id="sheetNav" class="sheet-nav" aria-label="Subsheet navigation"></nav>
+      </aside>
+
+      <main class="content">
+        <header class="content-header">
+          <div>
+            <h2 id="sheetTitle">Loading...</h2>
+            <p class="muted">View-only computed values from Google Sheets</p>
+          </div>
+          <div class="controls">
+            <input id="globalFilter" type="search" placeholder="Filter rows (like basic sheet filter)" />
+            <button id="refreshButton" type="button">Refresh now</button>
+          </div>
+        </header>
+
+        <section id="tableWrap" class="table-wrap" aria-live="polite"></section>
+      </main>
+    </div>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>
