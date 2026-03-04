@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "engines": {
-    "node": ">=20 <21",
-    "npm": ">=10 <11"
+    "node": ">=24 <25",
+    "npm": ">=11 <12"
   },
   "scripts": {
     "setup": "npm install && npm run check:env",
@@ -20,9 +20,6 @@
     "format": "prettier --write \"README.md\" \"public/**/*.{html,css,js,json}\" \"scripts/**/*.js\" \"*.json\"",
     "smoke": "node scripts/smoke_check.js",
     "check": "run-s check:env lint format:check smoke"
-  },
-  "dependencies": {
-    "@vercel/kv": "^2.0.0"
   },
   "devDependencies": {
     "eslint": "^8.57.1",

@@ -13,8 +13,7 @@ const LIVE_DUMP_SOURCE = {
   statusOnlySources: {
     costData: "cost_data",
     baseData: "base_data"
-  },
-  healthUrl: "/__ios_performance_dump_health"
+  }
 };
 
 const dumpHealthState = {
@@ -150,10 +149,6 @@ async function fetchJsonWithTimeout(url, timeoutMs) {
   }
 }
 
-function buildSourceCacheUrl(sourceKey) {
-  return `/__dump_cache/${encodeURIComponent(sourceKey)}.csv`;
-}
-
 async function loadRemoteSourceCsvMap(sourceKeys) {
   if (!LIVE_DUMP_SOURCE.webAppUrl) {
     return {};
@@ -204,30 +199,6 @@ async function loadRemoteSourceCsvMap(sourceKeys) {
   }
 
   return result;
-}
-
-async function loadLocalCachedCsvText(sourceKey) {
-  const response = await fetch(buildSourceCacheUrl(sourceKey), { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Local cache request failed (${sourceKey}) with status ${response.status}`);
-  }
-  const text = await response.text();
-  return text.trim() ? text : "";
-}
-
-async function loadLocalCacheHealth() {
-  if (!LIVE_DUMP_SOURCE.healthUrl) {
-    return null;
-  }
-  try {
-    const response = await fetch(LIVE_DUMP_SOURCE.healthUrl, { cache: "no-store" });
-    if (!response.ok) {
-      return null;
-    }
-    return await response.json();
-  } catch (error) {
-    return null;
-  }
 }
 
 function renderDumpHealthToggle() {
@@ -1588,64 +1559,31 @@ async function init() {
   const sourceCsvMap = {};
   const sourceErrors = {};
   const allSourceKeys = Object.values(LIVE_DUMP_SOURCE.sources);
-  const localHealth = await loadLocalCacheHealth();
 
-  for (const sourceKey of allSourceKeys) {
-    try {
-      const csvText = await loadLocalCachedCsvText(sourceKey);
-      if (!csvText) {
-        sourceErrors[sourceKey] = "empty local cache";
-        continue;
+  try {
+    const remoteCsvMap = await loadRemoteSourceCsvMap(allSourceKeys);
+    allSourceKeys.forEach((sourceKey) => {
+      const remoteEntry = remoteCsvMap[sourceKey];
+      if (!remoteEntry?.csvText) {
+        sourceErrors[sourceKey] = "remote response missing source payload";
+        return;
       }
-      sourceCsvMap[sourceKey] = csvText;
+      sourceCsvMap[sourceKey] = remoteEntry.csvText;
       const dumpKey = sourceToDumpKey[sourceKey];
       if (!dumpKey) {
         return;
       }
-      const sourceHealth = localHealth?.sources?.[sourceKey];
       setDumpHealthStatus(dumpKey, {
-        source: "local-cache",
-        updatedAt: sourceHealth?.updatedAt || localHealth?.updatedAt || new Date().toISOString(),
-        details: sourceHealth?.ok
-          ? `Local cache (${sourceHealth.rowCount || 0} rows)`
-          : "Local cache"
+        source: "remote-live",
+        updatedAt: remoteEntry.generatedAt || new Date().toISOString(),
+        details: `Apps Script (${remoteEntry.rowCount || 0} rows)`
       });
-    } catch (error) {
-      sourceErrors[sourceKey] = error.message || String(error);
-    }
-  }
-
-  const missingSourceKeys = allSourceKeys.filter((sourceKey) => !sourceCsvMap[sourceKey]);
-  if (missingSourceKeys.length > 0) {
-    try {
-      const remoteCsvMap = await loadRemoteSourceCsvMap(missingSourceKeys);
-      missingSourceKeys.forEach((sourceKey) => {
-        const remoteEntry = remoteCsvMap[sourceKey];
-        if (!remoteEntry?.csvText) {
-          if (!sourceErrors[sourceKey]) {
-            sourceErrors[sourceKey] = "remote response missing source payload";
-          }
-          return;
-        }
-        sourceCsvMap[sourceKey] = remoteEntry.csvText;
-        const dumpKey = sourceToDumpKey[sourceKey];
-        if (!dumpKey) {
-          return;
-        }
-        setDumpHealthStatus(dumpKey, {
-          source: "remote-live",
-          updatedAt: remoteEntry.generatedAt || new Date().toISOString(),
-          details: `Apps Script (${remoteEntry.rowCount || 0} rows)`
-        });
-      });
-    } catch (error) {
-      const remoteError = error.message || String(error);
-      missingSourceKeys.forEach((sourceKey) => {
-        if (!sourceErrors[sourceKey]) {
-          sourceErrors[sourceKey] = remoteError;
-        }
-      });
-    }
+    });
+  } catch (error) {
+    const remoteError = error.message || String(error);
+    allSourceKeys.forEach((sourceKey) => {
+      sourceErrors[sourceKey] = remoteError;
+    });
   }
 
   if (sourceCsvMap[LIVE_DUMP_SOURCE.sources.spendsPlan]) {
@@ -1663,30 +1601,18 @@ async function init() {
     deepdiveDailyCsvText = sourceCsvMap[LIVE_DUMP_SOURCE.sources.spendsDaily];
   }
 
-  Object.entries(LIVE_DUMP_SOURCE.statusOnlySources).forEach(([statusKey, sourceKey]) => {
-    const sourceHealth = localHealth?.sources?.[sourceKey];
-    if (sourceHealth) {
-      setDumpHealthStatus(statusKey, {
-        source: sourceHealth.ok ? "local-cache" : "unavailable",
-        updatedAt: sourceHealth.updatedAt || localHealth?.updatedAt || new Date().toISOString(),
-        details: sourceHealth.ok
-          ? `Local cache (${sourceHealth.rowCount || 0} rows)`
-          : sourceHealth.error || "Local cache unavailable"
-      });
-      return;
-    }
-
+  Object.entries(LIVE_DUMP_SOURCE.statusOnlySources).forEach(([statusKey]) => {
     setDumpHealthStatus(statusKey, {
-      source: "unknown",
-      updatedAt: localHealth?.updatedAt || new Date().toISOString(),
-      details: "not loaded yet"
+      source: "remote-live",
+      updatedAt: new Date().toISOString(),
+      details: "Apps Script status not tracked"
     });
   });
 
   const performanceSourceKey = LIVE_DUMP_SOURCE.sources.iosPerformanceDump;
   if (sourceCsvMap[performanceSourceKey]) {
     setDumpHealthStatus("performance", {
-      source: dumpHealthState.dumps.performance.source === "local-cache" ? "local-cache" : "remote-live",
+      source: "remote-live",
       details: "Loaded"
     });
   }

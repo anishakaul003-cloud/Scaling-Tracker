@@ -4,7 +4,7 @@
 const { execSync } = require("node:child_process");
 
 function getMajor(versionText) {
-  const match = String(versionText).trim().match(/^v?(\d+)\./);
+  const match = String(versionText).trim().match(/(\d+)(?:\.\d+)?/);
   return match ? Number(match[1]) : null;
 }
 
@@ -22,9 +22,9 @@ const failures = [];
 
 const nodeVersion = process.version;
 const nodeMajor = getMajor(nodeVersion);
-if (nodeMajor !== 20) {
+if (nodeMajor !== 24) {
   failures.push(
-    `Node.js 20 LTS is required. Found ${nodeVersion || "unknown version"}.`
+    `Node.js 24 LTS is required. Found ${nodeVersion || "unknown version"}.`
   );
 }
 
@@ -32,8 +32,8 @@ const npmVersion = readCommandVersion("npm --version");
 const npmMajor = getMajor(npmVersion || "");
 if (!npmVersion) {
   failures.push("npm is not available in PATH.");
-} else if (npmMajor !== 10) {
-  failures.push(`npm 10 is expected with Node 20 setup. Found ${npmVersion}.`);
+} else if (npmMajor !== 11) {
+  failures.push(`npm 11 is expected with Node 24 setup. Found ${npmVersion}.`);
 }
 
 const pythonVersion = readCommandVersion("python3 --version");
