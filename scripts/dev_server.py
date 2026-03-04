@@ -9,6 +9,7 @@ import json
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from json import JSONDecodeError
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -33,12 +34,17 @@ REMOTE_SOURCES = os.environ.get(
 )
 REFRESH_SECONDS = int(os.environ.get("IOS_DUMP_REFRESH_SECONDS", "300"))
 REMOTE_TIMEOUT_SECONDS = int(os.environ.get("IOS_DUMP_REMOTE_TIMEOUT_SECONDS", "90"))
+REQUEST_REFRESH_MIN_INTERVAL_SECONDS = int(os.environ.get("IOS_DUMP_REQUEST_REFRESH_MIN_INTERVAL_SECONDS", "45"))
+REFRESH_MAX_WORKERS = int(os.environ.get("IOS_DUMP_REFRESH_MAX_WORKERS", "6"))
 
 SOURCE_KEYS = [key.strip() for key in REMOTE_SOURCES.split(",") if key.strip()]
 CACHE_FILES = {key: ROOT_DIR / f"{key}_cache.csv" for key in SOURCE_KEYS}
 CACHE_META_PATH = ROOT_DIR / "dump_cache_meta.json"
 
 meta_lock = threading.Lock()
+refresh_lock = threading.Lock()
+refresh_in_progress = False
+last_refresh_triggered_at = 0.0
 runtime_meta = {
     "ok": False,
     "updatedAt": None,
@@ -107,6 +113,22 @@ def save_meta(meta: dict) -> None:
         runtime_meta.update(meta)
 
 
+def load_cached_meta_if_present() -> None:
+    if not CACHE_META_PATH.exists():
+        return
+    try:
+        parsed = json.loads(CACHE_META_PATH.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return
+    if not isinstance(parsed, dict):
+        return
+    if "sources" not in parsed or not isinstance(parsed["sources"], dict):
+        return
+    with meta_lock:
+        runtime_meta.clear()
+        runtime_meta.update(parsed)
+
+
 def _fetch_json(remote_url: str) -> dict:
     req = Request(remote_url, headers={"Accept": "application/json"})
     with urlopen(req, timeout=REMOTE_TIMEOUT_SECONDS) as response:
@@ -144,20 +166,28 @@ def _extract_dataset_from_payload(payload: dict, source_key: str) -> dict:
     raise RuntimeError("source missing in response")
 
 
+def fetch_source_to_cache(source_key: str) -> tuple[str, dict]:
+    try:
+        remote_url = build_remote_url(source_key)
+        payload = _fetch_json(remote_url)
+        dataset = _extract_dataset_from_payload(payload, source_key)
+        csv_text, row_count = dataset_to_csv_text(dataset)
+        if not csv_text:
+            raise RuntimeError("received empty dataset/csv")
+        CACHE_FILES[source_key].write_text(csv_text, encoding="utf-8")
+        return source_key, {"ok": True, "updatedAt": utc_now_iso(), "rowCount": row_count, "error": ""}
+    except Exception as exc:  # noqa: BLE001
+        return source_key, {"ok": False, "updatedAt": utc_now_iso(), "rowCount": 0, "error": str(exc)}
+
+
 def fetch_and_refresh_cache() -> None:
     next_sources = {}
-    for key in SOURCE_KEYS:
-        try:
-            remote_url = build_remote_url(key)
-            payload = _fetch_json(remote_url)
-            dataset = _extract_dataset_from_payload(payload, key)
-            csv_text, row_count = dataset_to_csv_text(dataset)
-            if not csv_text:
-                raise RuntimeError("received empty dataset/csv")
-            CACHE_FILES[key].write_text(csv_text, encoding="utf-8")
-            next_sources[key] = {"ok": True, "updatedAt": utc_now_iso(), "rowCount": row_count, "error": ""}
-        except Exception as exc:  # noqa: BLE001
-            next_sources[key] = {"ok": False, "updatedAt": utc_now_iso(), "rowCount": 0, "error": str(exc)}
+    worker_count = min(max(1, REFRESH_MAX_WORKERS), max(1, len(SOURCE_KEYS)))
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = [executor.submit(fetch_source_to_cache, key) for key in SOURCE_KEYS]
+        for future in as_completed(futures):
+            key, source_meta = future.result()
+            next_sources[key] = source_meta
 
     meta = {
         "ok": all(source["ok"] for source in next_sources.values()),
@@ -168,23 +198,46 @@ def fetch_and_refresh_cache() -> None:
     save_meta(meta)
 
 
+def guarded_refresh_once() -> None:
+    global refresh_in_progress
+    try:
+        fetch_and_refresh_cache()
+        print(f"[cache] refreshed at {utc_now_iso()}")
+    except Exception as exc:  # noqa: BLE001
+        failed_sources = {
+            key: {"ok": False, "updatedAt": utc_now_iso(), "rowCount": 0, "error": str(exc)} for key in SOURCE_KEYS
+        }
+        meta = {
+            "ok": False,
+            "updatedAt": utc_now_iso(),
+            "remoteUrl": REMOTE_BASE_URL,
+            "sources": failed_sources,
+        }
+        save_meta(meta)
+        print(f"[cache] refresh failed: {exc}")
+    finally:
+        with refresh_lock:
+            refresh_in_progress = False
+
+
+def maybe_trigger_background_refresh(force: bool = False) -> None:
+    global refresh_in_progress, last_refresh_triggered_at
+    now = time.time()
+    with refresh_lock:
+        if refresh_in_progress:
+            return
+        recently_triggered = (now - last_refresh_triggered_at) < REQUEST_REFRESH_MIN_INTERVAL_SECONDS
+        if recently_triggered and not force:
+            return
+        refresh_in_progress = True
+        last_refresh_triggered_at = now
+    thread = threading.Thread(target=guarded_refresh_once, daemon=True)
+    thread.start()
+
+
 def refresh_loop() -> None:
     while True:
-        try:
-            fetch_and_refresh_cache()
-            print(f"[cache] refreshed at {utc_now_iso()}")
-        except Exception as exc:  # noqa: BLE001
-            failed_sources = {
-                key: {"ok": False, "updatedAt": utc_now_iso(), "rowCount": 0, "error": str(exc)} for key in SOURCE_KEYS
-            }
-            meta = {
-                "ok": False,
-                "updatedAt": utc_now_iso(),
-                "remoteUrl": REMOTE_BASE_URL,
-                "sources": failed_sources,
-            }
-            save_meta(meta)
-            print(f"[cache] refresh failed: {exc}")
+        maybe_trigger_background_refresh(force=True)
         time.sleep(REFRESH_SECONDS)
 
 
@@ -193,6 +246,9 @@ class Handler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(PUBLIC_DIR), **kwargs)
 
     def do_GET(self) -> None:  # noqa: N802
+        # Refresh in background on requests, but always return cached data immediately.
+        maybe_trigger_background_refresh()
+
         if self.path == "/__ios_performance_dump_health":
             self.serve_health()
             return
@@ -239,6 +295,8 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def main() -> None:
+    load_cached_meta_if_present()
+    maybe_trigger_background_refresh(force=True)
     thread = threading.Thread(target=refresh_loop, daemon=True)
     thread.start()
 

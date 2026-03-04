@@ -1,0 +1,32 @@
+{
+  "rewrites": [
+    {
+      "source": "/__ios_performance_dump_health",
+      "destination": "/dump_cache_meta.json"
+    },
+    {
+      "source": "/__dump_cache/ios_performance_dump.csv",
+      "destination": "/ios_performance_dump_cache.csv"
+    },
+    {
+      "source": "/__dump_cache/spends_plan_tracking.csv",
+      "destination": "/spends_plan_tracking_cache.csv"
+    },
+    {
+      "source": "/__dump_cache/retention_view.csv",
+      "destination": "/retention_view_cache.csv"
+    },
+    {
+      "source": "/__dump_cache/raw_dump.csv",
+      "destination": "/raw_dump_cache.csv"
+    },
+    {
+      "source": "/__dump_cache/spends_weekly.csv",
+      "destination": "/spends_weekly_cache.csv"
+    },
+    {
+      "source": "/__dump_cache/spends_daily.csv",
+      "destination": "/spends_daily_cache.csv"
+    }
+  ]
+}
