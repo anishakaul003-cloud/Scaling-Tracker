@@ -1,62 +1,3 @@
-const LIVE_DUMP_SOURCE = {
-  webAppUrl: window.IOS_PERFORMANCE_DUMP_API_URL || "",
-  authToken: window.IOS_PERFORMANCE_DUMP_AUTH_TOKEN || "",
-  timeoutMs: 5 * 60 * 1000,
-  sources: {
-    iosPerformanceDump: "ios_performance_dump",
-    spendsPlan: "spends_plan_tracking",
-    retentionView: "retention_view",
-    rawDump: "raw_dump",
-    spendsWeekly: "spends_weekly",
-    spendsDaily: "spends_daily"
-  },
-  statusOnlySources: {
-    costData: "cost_data",
-    baseData: "base_data"
-  },
-  healthUrl: "/__ios_performance_dump_health"
-};
-
-const dumpHealthState = {
-  lastRefreshAt: null,
-  remoteUrl: LIVE_DUMP_SOURCE.webAppUrl || "not-configured",
-  dumps: {
-    performance: { label: "iOS Performance", source: "unknown", updatedAt: null, details: "not loaded yet" },
-    spendsPlan: { label: "Spends Plan", source: "unknown", updatedAt: null, details: "not loaded yet" },
-    retentionView: { label: "Retention View", source: "unknown", updatedAt: null, details: "not loaded yet" },
-    rawDump: { label: "RAW_DUMP", source: "unknown", updatedAt: null, details: "not loaded yet" },
-    costData: { label: "Cost_Data", source: "unknown", updatedAt: null, details: "not loaded yet" },
-    baseData: { label: "Base_Data", source: "unknown", updatedAt: null, details: "not loaded yet" },
-    recoveries: { label: "Recoveries", source: "unknown", updatedAt: null, details: "not loaded yet" },
-    deepdiveWeekly: { label: "Deepdive Weekly", source: "unknown", updatedAt: null, details: "not loaded yet" },
-    deepdiveDaily: { label: "Deepdive Daily", source: "unknown", updatedAt: null, details: "not loaded yet" }
-  }
-};
-
-function setDumpHealthStatus(key, nextValues) {
-  const existing = dumpHealthState.dumps[key] || { label: key, source: "unknown", updatedAt: null, details: "" };
-  dumpHealthState.dumps[key] = { ...existing, ...nextValues };
-  dumpHealthState.lastRefreshAt = new Date().toISOString();
-}
-
-function formatIstTimestamp(timestamp) {
-  if (!timestamp) return "n/a";
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return String(timestamp);
-  const text = new Intl.DateTimeFormat("en-IN", {
-    timeZone: "Asia/Kolkata",
-    dateStyle: "medium",
-    timeStyle: "medium",
-    hour12: true
-  }).format(date);
-  return `${text} IST`;
-}
-
-function sourceDisplayName(source) {
-  if (source === "local-cache" || source === "remote-live") return "api-fetch";
-  return source;
-}
-
 function parseCsv(text) {
   const rows = [];
   let row = [];
@@ -103,175 +44,6 @@ function parseCsv(text) {
   }
 
   return rows;
-}
-
-function escapeCsvCell(value) {
-  const text = value === null || value === undefined ? "" : String(value);
-  if (/[",\r\n]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
-  }
-  return text;
-}
-
-function datasetToCsv(dataset) {
-  const headers = Array.isArray(dataset?.headers) ? dataset.headers : [];
-  const rows = Array.isArray(dataset?.rows) ? dataset.rows : [];
-
-  if (headers.length === 0) {
-    return "";
-  }
-
-  const headerLine = headers.map((header) => escapeCsvCell(header)).join(",");
-  const dataLines = rows.map((row) => {
-    if (Array.isArray(row)) {
-      return headers.map((_, index) => escapeCsvCell(row[index])).join(",");
-    }
-    return headers.map((header) => escapeCsvCell(row?.[header])).join(",");
-  });
-
-  return [headerLine, ...dataLines].join("\r\n");
-}
-
-async function fetchJsonWithTimeout(url, timeoutMs) {
-  const controller = new AbortController();
-  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(url, {
-      cache: "no-store",
-      signal: controller.signal
-    });
-    if (!response.ok) {
-      throw new Error(`Request failed with status ${response.status}`);
-    }
-    return await response.json();
-  } finally {
-    clearTimeout(timeoutHandle);
-  }
-}
-
-function buildSourceCacheUrl(sourceKey) {
-  return `/__dump_cache/${encodeURIComponent(sourceKey)}.csv`;
-}
-
-async function loadRemoteSourceCsvMap(sourceKeys) {
-  if (!LIVE_DUMP_SOURCE.webAppUrl) {
-    return {};
-  }
-
-  const url = new URL(LIVE_DUMP_SOURCE.webAppUrl);
-  if (sourceKeys.length === 1) {
-    url.searchParams.set("source", sourceKeys[0]);
-  } else {
-    url.searchParams.set("sources", sourceKeys.join(","));
-  }
-  if (LIVE_DUMP_SOURCE.authToken) {
-    url.searchParams.set("token", LIVE_DUMP_SOURCE.authToken);
-  }
-
-  const payload = await fetchJsonWithTimeout(url.toString(), LIVE_DUMP_SOURCE.timeoutMs);
-  if (!payload?.ok) {
-    throw new Error(payload?.error || "Live source returned a non-ok response");
-  }
-
-  const result = {};
-  if (sourceKeys.length === 1 && payload?.data?.headers && payload?.data?.rows) {
-    result[sourceKeys[0]] = {
-      csvText: datasetToCsv(payload.data),
-      generatedAt: payload.generatedAt || null,
-      rowCount: Array.isArray(payload?.data?.rows) ? payload.data.rows.length : null
-    };
-    return result;
-  }
-
-  const responseData = payload?.data || {};
-  sourceKeys.forEach((sourceKey) => {
-    const sourceEntry = responseData[sourceKey];
-    const dataset = sourceEntry?.data || sourceEntry;
-    const csvText = datasetToCsv(dataset);
-    if (!csvText) {
-      return;
-    }
-    result[sourceKey] = {
-      csvText,
-      generatedAt: payload.generatedAt || null,
-      rowCount: Array.isArray(dataset?.rows) ? dataset.rows.length : null
-    };
-  });
-
-  if (Object.keys(result).length === 0) {
-    throw new Error("No remote source returned usable CSV payloads");
-  }
-
-  return result;
-}
-
-async function loadLocalCachedCsvText(sourceKey) {
-  const response = await fetch(buildSourceCacheUrl(sourceKey), { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Local cache request failed (${sourceKey}) with status ${response.status}`);
-  }
-  const text = await response.text();
-  return text.trim() ? text : "";
-}
-
-async function loadLocalCacheHealth() {
-  if (!LIVE_DUMP_SOURCE.healthUrl) {
-    return null;
-  }
-  try {
-    const response = await fetch(LIVE_DUMP_SOURCE.healthUrl, { cache: "no-store" });
-    if (!response.ok) {
-      return null;
-    }
-    return await response.json();
-  } catch (error) {
-    return null;
-  }
-}
-
-function renderDumpHealthToggle() {
-  const toggle = document.getElementById("dump-health-toggle");
-  const panel = document.getElementById("dump-health-panel");
-  const list = document.getElementById("dump-health-list");
-  const lastRefresh = document.getElementById("dump-health-last-refresh");
-
-  if (!toggle || !panel || !list || !lastRefresh) {
-    return;
-  }
-
-  const dumpEntries = Object.values(dumpHealthState.dumps);
-  const knownCount = dumpEntries.filter((entry) => sourceDisplayName(entry.source) !== "unknown").length;
-  toggle.textContent = `Status ${knownCount}/${dumpEntries.length}`;
-  lastRefresh.textContent = formatIstTimestamp(dumpHealthState.lastRefreshAt);
-
-  list.textContent = "";
-  dumpEntries.forEach((entry) => {
-    const item = document.createElement("article");
-    item.className = "dump-health-item";
-
-    const title = document.createElement("p");
-    title.className = "dump-health-item-title";
-    title.textContent = `${entry.label}: ${sourceDisplayName(entry.source)}`;
-
-    const meta = document.createElement("p");
-    meta.className = "dump-health-item-meta";
-    const updated = formatIstTimestamp(entry.updatedAt);
-    meta.textContent = `Updated: ${updated} | ${entry.details || "n/a"}`;
-
-    item.appendChild(title);
-    item.appendChild(meta);
-    list.appendChild(item);
-  });
-
-  if (!toggle.dataset.bound) {
-    toggle.dataset.bound = "1";
-    toggle.addEventListener("click", () => {
-      const isOpen = !panel.hidden;
-      panel.hidden = isOpen;
-      toggle.setAttribute("aria-expanded", isOpen ? "false" : "true");
-    });
-  }
 }
 
 function isCompletelyEmptyRow(row) {
@@ -366,42 +138,6 @@ function parseScaleNumber(value) {
   return Number.isFinite(parsed) ? parsed : NaN;
 }
 
-function isLikelyDateText(value) {
-  const text = String(value ?? "").trim();
-  if (!text) return false;
-  if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(text)) return true;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return true;
-  return /^(mon|tue|wed|thu|fri|sat|sun)\s/i.test(text);
-}
-
-function isPlainNumberText(value) {
-  const text = String(value ?? "").trim();
-  if (!text) return false;
-  if (text.includes("$") || text.includes("%") || text.includes(",")) return false;
-  if (isLikelyDateText(text)) return false;
-  return /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(text);
-}
-
-function formatUsdCompact(value) {
-  if (!Number.isFinite(value)) return "";
-  const normalized = Math.abs(value) < 0.005 ? 0 : value;
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0
-  }).format(normalized);
-}
-
-function formatSpendsCellValue(value) {
-  const text = String(value ?? "").trim();
-  if (!text) return "";
-  if (!isPlainNumberText(text)) return value;
-
-  const numberValue = Number(text);
-  if (!Number.isFinite(numberValue)) return value;
-  return formatUsdCompact(numberValue);
-}
-
 function interpolateColor(startColor, endColor, ratio) {
   const bounded = Math.max(0, Math.min(1, ratio));
   const r = Math.round(startColor[0] + (endColor[0] - startColor[0]) * bounded);
@@ -411,7 +147,7 @@ function interpolateColor(startColor, endColor, ratio) {
 }
 
 function getColumnMetricDirection(tableId, headerText) {
-  const normalizedHeader = String(headerText ?? "").toLowerCase().trim();
+  const normalizedHeader = headerText.toLowerCase().trim();
   const costEfficiencyMetrics = new Set(["cpi", "cpfw d7", "d15 cpfsw", "d30 cpfsw"]);
 
   if (costEfficiencyMetrics.has(normalizedHeader)) {
@@ -650,8 +386,7 @@ function renderRawGridTable(tableId, rows, options = {}) {
     for (let i = 0; i < maxColumns; i += 1) {
       const td = document.createElement("td");
       const cellValue = getDisplayCellValue(i);
-      const renderedCellValue = isSpendsTable ? formatSpendsCellValue(cellValue) : cellValue;
-      td.textContent = renderedCellValue;
+      td.textContent = cellValue;
 
       if (isPlatformSpendsHeaderRow) {
         const normalizedCell = normalizeString(cellValue);
@@ -684,15 +419,10 @@ function renderRawGridTable(tableId, rows, options = {}) {
         }
       }
 
-      if (/^-\$?\d|^-\d/.test(String(renderedCellValue ?? "").trim())) {
+      if (/^-\$?\d|^-\d/.test(cellValue.trim())) {
         td.classList.add("value-negative");
       }
-      if (
-        renderedCellValue === "$0.00" ||
-        renderedCellValue === "$0" ||
-        renderedCellValue === "0.00%" ||
-        renderedCellValue === "0"
-      ) {
+      if (cellValue === "$0.00" || cellValue === "0.00%" || cellValue === "0") {
         td.classList.add("value-muted");
       }
 
@@ -702,6 +432,138 @@ function renderRawGridTable(tableId, rows, options = {}) {
   });
 
   table.appendChild(tbody);
+}
+
+function extractScriptLevelSpendsRows(csvText) {
+  const parsedRows = parseCsv(csvText);
+  const startSheetRow = 2;
+  const hiddenSheetRows = new Set([4]);
+  const dataRows = [];
+  for (let i = startSheetRow - 1; i < parsedRows.length; i += 1) {
+    const sheetRowNumber = i + 1;
+    if (hiddenSheetRows.has(sheetRowNumber)) {
+      continue;
+    }
+
+    const row = parsedRows[i];
+    const scoped = row.slice(1, 10);
+    const showName = (scoped[0] || "").trim();
+    const scriptName = (scoped[1] || "").trim();
+    const rowHasContent = scoped.some((cell) => (cell || "").trim() !== "");
+
+    const isHeaderRow = normalizeString(showName) === "show name" && normalizeString(scriptName) === "script name";
+    if (isHeaderRow) {
+      continue;
+    }
+
+    if (!rowHasContent) {
+      continue;
+    }
+    if (showName === "" && scriptName === "") {
+      continue;
+    }
+
+    dataRows.push({
+      showName: scoped[0] || "",
+      scriptName: scoped[1] || "",
+      androidMeta: scoped[2] || "",
+      androidUac: scoped[3] || "",
+      androidTiktok: scoped[4] || "",
+      iosMeta: scoped[5] || "",
+      iosUac: scoped[6] || "",
+      iosTiktok: scoped[7] || "",
+      total: scoped[8] || ""
+    });
+
+    if (normalizeString(showName) === "total") {
+      break;
+    }
+  }
+
+  return dataRows;
+}
+
+function formatScriptLevelCurrency(value) {
+  const parsed = parseScaleNumber(value);
+  if (Number.isFinite(parsed)) {
+    return formatCurrency(parsed);
+  }
+  return value;
+}
+
+function renderScriptLevelSpendsTable(tableId, rows) {
+  const table = document.getElementById(tableId);
+  table.textContent = "";
+
+  const thead = document.createElement("thead");
+  const topHeaderRow = document.createElement("tr");
+  const showHeader = document.createElement("th");
+  showHeader.textContent = "Show Name";
+  showHeader.rowSpan = 2;
+  topHeaderRow.appendChild(showHeader);
+
+  const scriptHeader = document.createElement("th");
+  scriptHeader.textContent = "Script Name";
+  scriptHeader.rowSpan = 2;
+  topHeaderRow.appendChild(scriptHeader);
+
+  const androidGroupHeader = document.createElement("th");
+  androidGroupHeader.textContent = "Android";
+  androidGroupHeader.colSpan = 3;
+  topHeaderRow.appendChild(androidGroupHeader);
+
+  const iosGroupHeader = document.createElement("th");
+  iosGroupHeader.textContent = "iOS";
+  iosGroupHeader.colSpan = 3;
+  topHeaderRow.appendChild(iosGroupHeader);
+
+  const totalHeader = document.createElement("th");
+  totalHeader.textContent = "Total";
+  totalHeader.rowSpan = 2;
+  topHeaderRow.appendChild(totalHeader);
+  thead.appendChild(topHeaderRow);
+
+  const secondHeaderRow = document.createElement("tr");
+  ["Meta", "UAC", "TikTok", "Meta", "UAC", "TikTok"].forEach((label) => {
+    const th = document.createElement("th");
+    th.textContent = label;
+    secondHeaderRow.appendChild(th);
+  });
+  thead.appendChild(secondHeaderRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    const isTotalRow = normalizeString(row.showName) === "total";
+    if (isTotalRow) {
+      tr.classList.add("script-level-total-row");
+    }
+
+    const showNameCell = document.createElement("td");
+    showNameCell.textContent = row.showName;
+    showNameCell.classList.add("metric-primary");
+    tr.appendChild(showNameCell);
+
+    const scriptNameCell = document.createElement("td");
+    scriptNameCell.textContent = row.scriptName;
+    tr.appendChild(scriptNameCell);
+
+    [row.androidMeta, row.androidUac, row.androidTiktok, row.iosMeta, row.iosUac, row.iosTiktok, row.total].forEach((value) => {
+      const td = document.createElement("td");
+      td.textContent = formatScriptLevelCurrency(value);
+      td.classList.add("script-level-number");
+      tr.appendChild(td);
+    });
+
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+}
+
+function getScriptLevelSpendsCsvText() {
+  return typeof SCRIPT_LEVEL_SPENDS_CSV_TEXT === "string" ? SCRIPT_LEVEL_SPENDS_CSV_TEXT : "";
 }
 
 function buildShowSectionsMap(showCsvTextByKey) {
@@ -736,13 +598,13 @@ function uniqueSorted(values) {
 
 function orderDayDiffValues(values) {
   const dayDiffOrder = ["d3", "d7", "d15", "d30"];
-  const normalized = Array.from(new Set(values.map((value) => normalizeString(value)).filter((value) => value !== "")));
+  const normalized = Array.from(new Set(values.filter((value) => value !== "").map((value) => value.toLowerCase())));
   const orderedKnown = dayDiffOrder.filter((dayDiff) => normalized.includes(dayDiff));
   const remaining = normalized.filter((value) => !dayDiffOrder.includes(value)).sort((a, b) => a.localeCompare(b));
   return [...orderedKnown, ...remaining];
 }
 
-function setSelectOptions(selectElement, values, emptyLabel = null, getLabel = null) {
+function setSelectOptions(selectElement, values, emptyLabel = null) {
   const previousValue = selectElement.value;
   selectElement.textContent = "";
 
@@ -756,7 +618,7 @@ function setSelectOptions(selectElement, values, emptyLabel = null, getLabel = n
   values.forEach((value) => {
     const option = document.createElement("option");
     option.value = value;
-    option.textContent = typeof getLabel === "function" ? getLabel(value) : value;
+    option.textContent = value;
     selectElement.appendChild(option);
   });
 
@@ -774,103 +636,16 @@ function normalizeIdString(value) {
   return String(value ?? "").trim();
 }
 
-function normalizeIdKey(value) {
-  return normalizeString(normalizeIdString(value));
-}
-
-function normalizeDateKey(value) {
-  const parsed = parseIsoDate(value);
-  return parsed ? toIsoDateString(parsed) : normalizeString(value);
-}
-
-function isWildcardSelection(normalizedValue) {
-  return normalizedValue === "" || normalizedValue === "all";
-}
-
-function getPlatformDisplayLabel(value) {
-  const normalized = normalizeString(value);
-  if (normalized === "ios") return "iOS";
-  if (normalized === "android") return "Android";
-  return normalizeIdString(value);
-}
-
-function getDayDiffDisplayLabel(value) {
-  return normalizeIdString(value).toUpperCase();
-}
-
-function getMediaSourceGroup(value) {
-  const normalized = normalizeString(value);
-  if (normalized.includes("googleadwords") || normalized.includes("google ads")) return "google_ads";
-  if (normalized.includes("facebook") || normalized.includes("meta")) return "meta";
-  if (normalized.includes("bytedance") || normalized.includes("tiktok") || normalized.includes("tik tok")) return "tiktok";
-  return "other";
-}
-
-function getMediaSourceDisplayLabel(value) {
-  if (value === "google_ads") return "Google Ads";
-  if (value === "meta") return "Meta";
-  if (value === "tiktok") return "TikTok";
-  return normalizeIdString(value);
-}
-
 function doesRowMatchFilters(row, selectedFilters) {
-  const adsetMatches = !selectedFilters.adsetIsActive || normalizeIdKey(row.Adset_ID) === selectedFilters.adsetNormalized;
-  const campaignMatches = !selectedFilters.campaignIsActive || normalizeIdKey(row.Campaign_ID) === selectedFilters.campaignNormalized;
-  const showMatches =
-    isWildcardSelection(selectedFilters.showNormalized) ||
-    normalizeString(row.Show_Name) === selectedFilters.showNormalized;
-  const platformMatches =
-    isWildcardSelection(selectedFilters.platformNormalized) ||
-    normalizeString(row.Platform) === selectedFilters.platformNormalized;
-  const mediaSourceMatches =
-    isWildcardSelection(selectedFilters.mediaSourceNormalized) ||
-    getMediaSourceGroup(row.Media_Source) === selectedFilters.mediaSourceNormalized;
-  const dayDiffMatches =
-    isWildcardSelection(selectedFilters.dayDiffNormalized) ||
-    normalizeString(row.day_diff) === selectedFilters.dayDiffNormalized;
+  const campaignMatches = !selectedFilters.campaignIsActive || normalizeString(row.Campaign_ID) === selectedFilters.campaignNormalized;
 
   return (
-    showMatches &&
-    platformMatches &&
-    mediaSourceMatches &&
-    adsetMatches &&
-    dayDiffMatches &&
+    normalizeString(row.Show_Name) === selectedFilters.showNormalized &&
+    normalizeString(row.Platform) === selectedFilters.platformNormalized &&
+    normalizeString(row.Media_Source) === selectedFilters.mediaSourceNormalized &&
+    normalizeString(normalizeIdString(row.Adset_ID)) === selectedFilters.adsetNormalized &&
+    normalizeString(row.day_diff) === selectedFilters.dayDiffNormalized &&
     campaignMatches
-  );
-}
-
-function matchesRetentionFormulaRow(row, selectedFilters, installPeriodIso, requireNonZeroInstalls) {
-  const showMatches =
-    isWildcardSelection(selectedFilters.showNormalized) ||
-    normalizeString(row.Show_Name) === selectedFilters.showNormalized;
-  const platformMatches =
-    isWildcardSelection(selectedFilters.platformNormalized) ||
-    normalizeString(row.Platform) === selectedFilters.platformNormalized;
-  const mediaSourceMatches =
-    isWildcardSelection(selectedFilters.mediaSourceNormalized) ||
-    getMediaSourceGroup(row.Media_Source) === selectedFilters.mediaSourceNormalized;
-  const adsetMatches =
-    !selectedFilters.adsetIsActive ||
-    normalizeIdKey(row.Adset_ID) === selectedFilters.adsetNormalized;
-  const campaignMatches =
-    !selectedFilters.campaignIsActive ||
-    normalizeIdKey(row.Campaign_ID) === selectedFilters.campaignNormalized;
-  const dayDiffMatches =
-    isWildcardSelection(selectedFilters.dayDiffNormalized) ||
-    normalizeString(row.day_diff) === selectedFilters.dayDiffNormalized;
-  const periodMatches = normalizeDateKey(row.Install_Period) === normalizeDateKey(installPeriodIso);
-  const installs = parseMetricNumber(row.Installs);
-  const nonZeroInstalls = !requireNonZeroInstalls || (Number.isFinite(installs) && installs !== 0);
-
-  return (
-    showMatches &&
-    platformMatches &&
-    mediaSourceMatches &&
-    adsetMatches &&
-    campaignMatches &&
-    dayDiffMatches &&
-    periodMatches &&
-    nonZeroInstalls
   );
 }
 
@@ -1007,16 +782,6 @@ function createSearchableComboBox(config) {
   };
 }
 
-function bindIdInputSanitizer(inputElement) {
-  if (!inputElement) return;
-  inputElement.addEventListener("input", () => {
-    const sanitized = normalizeIdString(inputElement.value).replace(/[^\w.-]/g, "");
-    if (sanitized !== inputElement.value) {
-      inputElement.value = sanitized;
-    }
-  });
-}
-
 function toIsoDateString(dateValue) {
   const year = dateValue.getFullYear();
   const month = String(dateValue.getMonth() + 1).padStart(2, "0");
@@ -1115,88 +880,6 @@ function buildRawDumpRows(rawDumpCsvText) {
     });
     return row;
   });
-}
-
-function hasRawDumpSchema(rows) {
-  if (!Array.isArray(rows) || rows.length === 0) return false;
-  const sample = rows[0] || {};
-  const keys = Object.keys(sample);
-  return keys.includes("Install_Period") && keys.includes("day_diff");
-}
-
-function parseUsDateToIso(text) {
-  const raw = normalizeIdString(text);
-  const match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-  if (!match) return null;
-  const month = Number(match[1]);
-  const day = Number(match[2]);
-  const year = Number(match[3].length === 2 ? `20${match[3]}` : match[3]);
-  if (!Number.isFinite(month) || !Number.isFinite(day) || !Number.isFinite(year)) return null;
-  const dateValue = new Date(year, month - 1, day);
-  if (Number.isNaN(dateValue.getTime())) return null;
-  return toIsoDateString(dateValue);
-}
-
-function parsePrecomputedRetentionView(rawDumpCsvText) {
-  const rows = parseCsv(rawDumpCsvText);
-  if (rows.length === 0) return null;
-
-  const firstHeaderIndex = rows.findIndex((row) => normalizeString(row[0]) === "retention /week >>");
-  if (firstHeaderIndex < 0) return null;
-
-  const secondHeaderIndex = rows.findIndex(
-    (row, index) => index > firstHeaderIndex && normalizeString(row[0]) === "retention /week >>"
-  );
-  if (secondHeaderIndex < 0) return null;
-
-  const headerDates = rows[firstHeaderIndex].slice(1).filter((cell) => normalizeIdString(cell) !== "");
-  const weekBuckets = headerDates
-    .map((cell) => {
-      const iso = parseUsDateToIso(cell);
-      const dateValue = iso ? parseIsoDate(iso) : null;
-      if (!iso || !dateValue) return null;
-      return { iso, date: dateValue, label: formatDateLabel(dateValue) };
-    })
-    .filter((entry) => entry !== null);
-
-  const readMetricMap = (startIndex) => {
-    const metricMap = new Map();
-    for (let i = startIndex + 1; i < rows.length; i += 1) {
-      const row = rows[i];
-      const rowName = normalizeIdString(row[0]);
-      if (!rowName) break;
-      if (normalizeString(rowName) === "normalised retention") continue;
-      if (normalizeString(rowName) === "retention /week >>") break;
-      metricMap.set(
-        rowName.toUpperCase(),
-        weekBuckets.map((bucket, columnIndex) => parseMetricNumber(row[columnIndex + 1]))
-      );
-    }
-    return metricMap;
-  };
-
-  const rawMetrics = readMetricMap(firstHeaderIndex);
-  const normalizedMetrics = readMetricMap(secondHeaderIndex);
-  if (weekBuckets.length === 0 || rawMetrics.size === 0) return null;
-
-  const metaByPrefix = (prefix) => {
-    const row = rows.find((cells) => normalizeString(cells[0]).startsWith(prefix));
-    return normalizeIdString(row?.[1] || "");
-  };
-
-  return {
-    weekBuckets,
-    rawMetrics,
-    normalizedMetrics,
-    meta: {
-      show: metaByPrefix("show >>"),
-      platform: metaByPrefix("platform >>"),
-      mediaSource: metaByPrefix("media source >>"),
-      adsetId: metaByPrefix("ad set id >>"),
-      campaignId: metaByPrefix("campaign id >>"),
-      dayDiff: normalizeString(metaByPrefix("day diff >>")) || "d30"
-    }
-  };
 }
 
 function getFirstPresentValue(row, fieldCandidates) {
@@ -1534,9 +1217,7 @@ function renderRetentionMetricTable(
   table.appendChild(tbody);
 }
 
-async function init() {
-  renderDumpHealthToggle();
-
+function init() {
   if (typeof SHOW_CSV_TEXT_BY_KEY !== "object" || SHOW_CSV_TEXT_BY_KEY === null) {
     throw new Error("SHOW_CSV_TEXT_BY_KEY is not available in index.html");
   }
@@ -1562,161 +1243,10 @@ async function init() {
   renderDailySelectedShow();
   renderWeeklySelectedShow();
 
-  const embeddedSpendsPlanCsvText = typeof SPENDS_PLAN_CSV_TEXT === "string" ? SPENDS_PLAN_CSV_TEXT : "";
-  const embeddedRawDumpCsvText = typeof RAW_DUMP_CSV_TEXT === "string" ? RAW_DUMP_CSV_TEXT : "";
-  const embeddedDeepdiveWeeklyCsvText =
-    typeof DEEPDIVE_WEEKLY_RAW_CSV_TEXT === "string" ? DEEPDIVE_WEEKLY_RAW_CSV_TEXT : "";
-  const embeddedDeepdiveDailyCsvText =
-    typeof DEEPDIVE_DAILY_RAW_CSV_TEXT === "string" ? DEEPDIVE_DAILY_RAW_CSV_TEXT : "";
-
-  let spendsPlanCsvText = embeddedSpendsPlanCsvText;
-  let rawDumpCsvText = embeddedRawDumpCsvText;
-  let deepdiveWeeklyCsvText = embeddedDeepdiveWeeklyCsvText;
-  let deepdiveDailyCsvText = embeddedDeepdiveDailyCsvText;
-
-  const sourceToDumpKey = {
-    [LIVE_DUMP_SOURCE.sources.iosPerformanceDump]: "performance",
-    [LIVE_DUMP_SOURCE.sources.spendsPlan]: "spendsPlan",
-    [LIVE_DUMP_SOURCE.sources.retentionView]: "retentionView",
-    [LIVE_DUMP_SOURCE.sources.rawDump]: "rawDump",
-    [LIVE_DUMP_SOURCE.sources.spendsWeekly]: "deepdiveWeekly",
-    [LIVE_DUMP_SOURCE.sources.spendsDaily]: "deepdiveDaily",
-    [LIVE_DUMP_SOURCE.statusOnlySources.costData]: "costData",
-    [LIVE_DUMP_SOURCE.statusOnlySources.baseData]: "baseData"
-  };
-
-  const sourceCsvMap = {};
-  const sourceErrors = {};
-  const allSourceKeys = Object.values(LIVE_DUMP_SOURCE.sources);
-  const localHealth = await loadLocalCacheHealth();
-
-  for (const sourceKey of allSourceKeys) {
-    try {
-      const csvText = await loadLocalCachedCsvText(sourceKey);
-      if (!csvText) {
-        sourceErrors[sourceKey] = "empty local cache";
-        continue;
-      }
-      sourceCsvMap[sourceKey] = csvText;
-      const dumpKey = sourceToDumpKey[sourceKey];
-      if (!dumpKey) {
-        return;
-      }
-      const sourceHealth = localHealth?.sources?.[sourceKey];
-      setDumpHealthStatus(dumpKey, {
-        source: "local-cache",
-        updatedAt: sourceHealth?.updatedAt || localHealth?.updatedAt || new Date().toISOString(),
-        details: sourceHealth?.ok
-          ? `Local cache (${sourceHealth.rowCount || 0} rows)`
-          : "Local cache"
-      });
-    } catch (error) {
-      sourceErrors[sourceKey] = error.message || String(error);
-    }
+  if (typeof SPENDS_PLAN_CSV_TEXT !== "string") {
+    throw new Error("SPENDS_PLAN_CSV_TEXT is not available in index.html");
   }
-
-  const missingSourceKeys = allSourceKeys.filter((sourceKey) => !sourceCsvMap[sourceKey]);
-  if (missingSourceKeys.length > 0) {
-    try {
-      const remoteCsvMap = await loadRemoteSourceCsvMap(missingSourceKeys);
-      missingSourceKeys.forEach((sourceKey) => {
-        const remoteEntry = remoteCsvMap[sourceKey];
-        if (!remoteEntry?.csvText) {
-          if (!sourceErrors[sourceKey]) {
-            sourceErrors[sourceKey] = "remote response missing source payload";
-          }
-          return;
-        }
-        sourceCsvMap[sourceKey] = remoteEntry.csvText;
-        const dumpKey = sourceToDumpKey[sourceKey];
-        if (!dumpKey) {
-          return;
-        }
-        setDumpHealthStatus(dumpKey, {
-          source: "remote-live",
-          updatedAt: remoteEntry.generatedAt || new Date().toISOString(),
-          details: `Apps Script (${remoteEntry.rowCount || 0} rows)`
-        });
-      });
-    } catch (error) {
-      const remoteError = error.message || String(error);
-      missingSourceKeys.forEach((sourceKey) => {
-        if (!sourceErrors[sourceKey]) {
-          sourceErrors[sourceKey] = remoteError;
-        }
-      });
-    }
-  }
-
-  if (sourceCsvMap[LIVE_DUMP_SOURCE.sources.spendsPlan]) {
-    spendsPlanCsvText = sourceCsvMap[LIVE_DUMP_SOURCE.sources.spendsPlan];
-  }
-  if (sourceCsvMap[LIVE_DUMP_SOURCE.sources.rawDump]) {
-    rawDumpCsvText = sourceCsvMap[LIVE_DUMP_SOURCE.sources.rawDump];
-  } else if (sourceCsvMap[LIVE_DUMP_SOURCE.sources.retentionView]) {
-    rawDumpCsvText = sourceCsvMap[LIVE_DUMP_SOURCE.sources.retentionView];
-  }
-  if (sourceCsvMap[LIVE_DUMP_SOURCE.sources.spendsWeekly]) {
-    deepdiveWeeklyCsvText = sourceCsvMap[LIVE_DUMP_SOURCE.sources.spendsWeekly];
-  }
-  if (sourceCsvMap[LIVE_DUMP_SOURCE.sources.spendsDaily]) {
-    deepdiveDailyCsvText = sourceCsvMap[LIVE_DUMP_SOURCE.sources.spendsDaily];
-  }
-
-  Object.entries(LIVE_DUMP_SOURCE.statusOnlySources).forEach(([statusKey, sourceKey]) => {
-    const sourceHealth = localHealth?.sources?.[sourceKey];
-    if (sourceHealth) {
-      setDumpHealthStatus(statusKey, {
-        source: sourceHealth.ok ? "local-cache" : "unavailable",
-        updatedAt: sourceHealth.updatedAt || localHealth?.updatedAt || new Date().toISOString(),
-        details: sourceHealth.ok
-          ? `Local cache (${sourceHealth.rowCount || 0} rows)`
-          : sourceHealth.error || "Local cache unavailable"
-      });
-      return;
-    }
-
-    setDumpHealthStatus(statusKey, {
-      source: "unknown",
-      updatedAt: localHealth?.updatedAt || new Date().toISOString(),
-      details: "not loaded yet"
-    });
-  });
-
-  const performanceSourceKey = LIVE_DUMP_SOURCE.sources.iosPerformanceDump;
-  if (sourceCsvMap[performanceSourceKey]) {
-    setDumpHealthStatus("performance", {
-      source: dumpHealthState.dumps.performance.source === "local-cache" ? "local-cache" : "remote-live",
-      details: "Loaded"
-    });
-  }
-
-  const embeddedFallbackSources = new Set([
-    LIVE_DUMP_SOURCE.sources.iosPerformanceDump,
-    LIVE_DUMP_SOURCE.sources.spendsPlan,
-    LIVE_DUMP_SOURCE.sources.retentionView,
-    LIVE_DUMP_SOURCE.sources.rawDump,
-    LIVE_DUMP_SOURCE.sources.spendsWeekly,
-    LIVE_DUMP_SOURCE.sources.spendsDaily
-  ]);
-
-  Object.entries(sourceToDumpKey).forEach(([sourceKey, dumpKey]) => {
-    if (!sourceCsvMap[sourceKey]) {
-      setDumpHealthStatus(dumpKey, {
-        source: embeddedFallbackSources.has(sourceKey) ? "embedded-local" : "unavailable",
-        updatedAt: new Date().toISOString(),
-        details: embeddedFallbackSources.has(sourceKey)
-          ? sourceErrors[sourceKey]
-            ? `Fallback | ${sourceErrors[sourceKey]}`
-            : "Fallback to embedded constants"
-          : sourceErrors[sourceKey] || "No fallback configured"
-      });
-    }
-  });
-  renderDumpHealthToggle();
-
-  const hasSpendsPlanSource = Boolean(spendsPlanCsvText);
-  const spendsPlanRows = parseCsv(spendsPlanCsvText);
+  const spendsPlanRows = parseCsv(SPENDS_PLAN_CSV_TEXT);
   const hiddenSectionStartIndex = spendsPlanRows.findIndex(
     (row) => (row[0] || "").trim() === "D-2 Growth Spends"
   );
@@ -1734,17 +1264,13 @@ async function init() {
         return { ...rowEntry, values: rowValues.slice(1) };
       }
       return rowEntry;
-    })
-    .filter((rowEntry) => {
-      const nonEmptyValues = rowEntry.values.map((value) => String(value ?? "").trim()).filter((value) => value !== "");
-      if (nonEmptyValues.length === 0) return false;
-      const syntheticHeaderCells = nonEmptyValues.filter(
-        (value) => /^Column_\d+$/i.test(value) || isLikelyDateText(value)
-      );
-      return syntheticHeaderCells.length !== nonEmptyValues.length;
     });
   const spendsBoldRows = new Set([2, 17, 19, 26, 34]);
   renderRawGridTable("spends-plan-table", visibleSpendsPlanRows, { boldRowNumbers: spendsBoldRows });
+
+  const scriptLevelSpendsCsvText = getScriptLevelSpendsCsvText();
+  const scriptLevelSpendsRows = extractScriptLevelSpendsRows(scriptLevelSpendsCsvText);
+  renderScriptLevelSpendsTable("script-level-spends-table", scriptLevelSpendsRows);
 
   if (typeof RECOVERIES_CSV_TEXT_BY_KEY !== "object" || RECOVERIES_CSV_TEXT_BY_KEY === null) {
     throw new Error("RECOVERIES_CSV_TEXT_BY_KEY is not available in index.html");
@@ -1759,19 +1285,16 @@ async function init() {
 
   recoveriesSelect.addEventListener("change", renderSelectedRecoveriesShow);
   renderSelectedRecoveriesShow();
-  if (dumpHealthState.dumps.recoveries.source === "unknown") {
-    setDumpHealthStatus("recoveries", {
-      source: "embedded-local",
-      updatedAt: new Date().toISOString(),
-      details: "Inline constants"
-    });
+
+  if (typeof RAW_DUMP_CSV_TEXT !== "string") {
+    throw new Error("RAW_DUMP_CSV_TEXT is not available in index.html");
   }
 
-  const hasRawDumpSource = Boolean(rawDumpCsvText);
-
-  let rawDumpRows = hasRawDumpSource ? buildRawDumpRows(rawDumpCsvText) : [];
-  const deepdiveWeeklyRawRows = deepdiveWeeklyCsvText ? buildRawDumpRows(deepdiveWeeklyCsvText) : rawDumpRows;
-  const deepdiveDailyRawRows = deepdiveDailyCsvText ? buildRawDumpRows(deepdiveDailyCsvText) : rawDumpRows;
+  const rawDumpRows = buildRawDumpRows(RAW_DUMP_CSV_TEXT);
+  const deepdiveWeeklyRawRows =
+    typeof DEEPDIVE_WEEKLY_RAW_CSV_TEXT === "string" ? buildRawDumpRows(DEEPDIVE_WEEKLY_RAW_CSV_TEXT) : rawDumpRows;
+  const deepdiveDailyRawRows =
+    typeof DEEPDIVE_DAILY_RAW_CSV_TEXT === "string" ? buildRawDumpRows(DEEPDIVE_DAILY_RAW_CSV_TEXT) : rawDumpRows;
   const deepdiveShowMap = {
     MVS: "My Vampire System",
     FLBM: "First Legendary Beast Master",
@@ -1901,119 +1424,19 @@ async function init() {
   const retentionDebugAdsetCount = document.getElementById("retention-debug-adset-count");
   const retentionDebugCampaignCount = document.getElementById("retention-debug-campaign-count");
   const retentionDebugMatchingRows = document.getElementById("retention-debug-matching-rows");
-  let benchmarkCpi = 19.49;
-  let retentionUsesEmbeddedRawFallback = false;
-  bindIdInputSanitizer(retentionAdsetInput);
-  bindIdInputSanitizer(retentionCampaignInput);
-
-  if (!hasRawDumpSchema(rawDumpRows) && embeddedRawDumpCsvText) {
-    const embeddedRawDumpRows = buildRawDumpRows(embeddedRawDumpCsvText);
-    if (hasRawDumpSchema(embeddedRawDumpRows)) {
-      rawDumpRows = embeddedRawDumpRows;
-      retentionUsesEmbeddedRawFallback = true;
-    }
-  }
-
-  if (!hasRawDumpSchema(rawDumpRows)) {
-    const precomputedRetention = parsePrecomputedRetentionView(rawDumpCsvText);
-    if (precomputedRetention) {
-      const { weekBuckets, rawMetrics, normalizedMetrics, meta } = precomputedRetention;
-      const dayDiffValue = meta.dayDiff || "d30";
-
-      benchmarkCpi = parseMetricNumber(rawMetrics.get("CPI")?.[0]) || benchmarkCpi;
-
-      const precomputedMediaSourceGroup = getMediaSourceGroup(meta.mediaSource || "");
-      setSelectOptions(retentionShowSelect, [meta.show || "N/A"]);
-      setSelectOptions(retentionPlatformSelect, [meta.platform || "N/A"], null, getPlatformDisplayLabel);
-      setSelectOptions(
-        retentionMediaSourceSelect,
-        [precomputedMediaSourceGroup],
-        null,
-        getMediaSourceDisplayLabel
-      );
-      setSelectOptions(retentionDayDiffSelect, [dayDiffValue], null, getDayDiffDisplayLabel);
-      retentionAdsetInput.value = meta.adsetId || "";
-      retentionCampaignInput.value = meta.campaignId || "";
-
-      [
-        retentionShowSelect,
-        retentionPlatformSelect,
-        retentionMediaSourceSelect,
-        retentionDayDiffSelect,
-        retentionAdsetInput,
-        retentionCampaignInput
-      ].forEach((element) => {
-        element.disabled = true;
-      });
-
-      retentionDebugTotalRows.textContent = `Precomputed Retention rows loaded: ${weekBuckets.length} weeks`;
-      retentionDebugAdsetCount.textContent = "Mode: Precomputed retention sheet";
-      retentionDebugCampaignCount.textContent = "Filters are locked to source metadata";
-      retentionDebugMatchingRows.textContent = `Day diff: ${getDayDiffDisplayLabel(dayDiffValue)}`;
-
-      const rawRowNames = ["CPI", "Installs", "H5", "H10", "H20", "H40"];
-      renderRetentionMetricTable(
-        "retention-raw-table",
-        weekBuckets,
-        rawRowNames,
-        (rowName, bucket) => {
-          const rowValues = rawMetrics.get(rowName.toUpperCase()) || [];
-          const value = rowValues[weekBuckets.findIndex((entry) => entry.iso === bucket.iso)];
-          if (rowName === "CPI") return formatCurrency(value);
-          if (rowName === "Installs") return formatInstalls(value);
-          return formatPercent(value);
-        },
-        dayDiffValue,
-        new Date(),
-        {
-          rowStartIndex: 9,
-          colStartIndex: 2,
-          enableConditionalFormatting: true,
-          debugKey: "raw-metrics-precomputed"
-        }
-      );
-
-      const normalizedRowNames = ["Installs", "H5", "H10", "H20", "H40"];
-      renderRetentionMetricTable(
-        "retention-normalized-table",
-        weekBuckets,
-        normalizedRowNames,
-        (rowName, bucket) => {
-          const rowValues = normalizedMetrics.get(rowName.toUpperCase()) || [];
-          const value = rowValues[weekBuckets.findIndex((entry) => entry.iso === bucket.iso)];
-          if (rowName === "Installs") return formatInstalls(value);
-          return formatPercent(value);
-        },
-        dayDiffValue,
-        new Date(),
-        {
-          rowStartIndex: 19,
-          colStartIndex: 2,
-          enableConditionalFormatting: true,
-          debugKey: "normalized-metrics-precomputed"
-        }
-      );
-
-      return;
-    }
-  }
+  const benchmarkCpi = 19.49;
 
   const showValues = uniqueSorted(rawDumpRows.map((row) => row.Show_Name));
   const platformValues = uniqueSorted(rawDumpRows.map((row) => row.Platform));
-  const preferredMediaSourceOrder = ["meta", "google_ads", "tiktok"];
-  const availableMediaSourceGroups = preferredMediaSourceOrder.filter((group) =>
-    rawDumpRows.some((row) => getMediaSourceGroup(row.Media_Source) === group)
-  );
-  const mediaSourceValues = availableMediaSourceGroups.length > 0 ? availableMediaSourceGroups : ["meta", "google_ads", "tiktok"];
+  const mediaSourceValues = uniqueSorted(rawDumpRows.map((row) => row.Media_Source));
   const adsetValues = uniqueSorted(rawDumpRows.map((row) => row.Adset_ID));
   const campaignValues = uniqueSorted(rawDumpRows.map((row) => row.Campaign_ID));
   const dayDiffValues = orderDayDiffValues(rawDumpRows.map((row) => row.day_diff));
-  const adsetValueSet = new Set(adsetValues.map((value) => normalizeIdKey(value)));
-  const campaignValueSet = new Set(campaignValues.map((value) => normalizeIdKey(value)));
+  const campaignValueSet = new Set(campaignValues.map((value) => normalizeString(value)));
 
-  setSelectOptions(retentionShowSelect, showValues, "All Shows");
-  setSelectOptions(retentionPlatformSelect, platformValues, "All Platforms", getPlatformDisplayLabel);
-  setSelectOptions(retentionMediaSourceSelect, mediaSourceValues, "All Media Sources", getMediaSourceDisplayLabel);
+  setSelectOptions(retentionShowSelect, showValues);
+  setSelectOptions(retentionPlatformSelect, platformValues);
+  setSelectOptions(retentionMediaSourceSelect, mediaSourceValues);
   const campaignComboBox = createSearchableComboBox({
     inputElement: retentionCampaignInput,
     optionsElement: retentionCampaignOptions,
@@ -2025,33 +1448,23 @@ async function init() {
     inputElement: retentionAdsetInput,
     optionsElement: retentionAdsetOptions,
     initialOptions: adsetValues,
-    allowEmpty: true,
-    emptyLabel: "Any (Optional)"
+    allowEmpty: false
   });
-  setSelectOptions(retentionDayDiffSelect, dayDiffValues, "All Day Diffs", getDayDiffDisplayLabel);
-  campaignComboBox.setValue("", false);
-  adsetComboBox.setValue("", false);
-  retentionShowSelect.value = "";
-  retentionPlatformSelect.value = "";
-  retentionMediaSourceSelect.value = "";
-  retentionDayDiffSelect.value = "";
+  setSelectOptions(retentionDayDiffSelect, dayDiffValues);
 
   retentionDebugTotalRows.textContent = `Total RAW_DUMP rows loaded: ${rawDumpRows.length}`;
   retentionDebugAdsetCount.textContent = `Unique Adset IDs: ${adsetValues.length}`;
   retentionDebugCampaignCount.textContent = `Unique Campaign IDs: ${campaignValues.length}`;
-  if (retentionUsesEmbeddedRawFallback) {
-    retentionDebugMatchingRows.textContent = "Source: embedded RAW_DUMP fallback (interactive filters enabled)";
-  }
   console.debug(
     `[Retention] totals loaded -> rows: ${rawDumpRows.length}, unique Campaign IDs: ${campaignValues.length}, unique Adset IDs: ${adsetValues.length}`
   );
 
   function refreshAdsetOptionsByCampaign() {
-    const selectedCampaignNormalized = normalizeIdKey(campaignComboBox.getValue());
+    const selectedCampaignNormalized = normalizeString(campaignComboBox.getValue());
     const campaignIsActive = campaignValueSet.has(selectedCampaignNormalized);
     const adsetSourceRows = !campaignIsActive
       ? rawDumpRows
-      : rawDumpRows.filter((row) => normalizeIdKey(row.Campaign_ID) === selectedCampaignNormalized);
+      : rawDumpRows.filter((row) => normalizeString(row.Campaign_ID) === selectedCampaignNormalized);
     const adsetOptionsForCampaign = uniqueSorted(adsetSourceRows.map((row) => row.Adset_ID));
     adsetComboBox.setOptions(adsetOptionsForCampaign, { preserveValue: true });
   }
@@ -2070,10 +1483,9 @@ async function init() {
     selectedFilters.showNormalized = normalizeString(selectedFilters.show);
     selectedFilters.platformNormalized = normalizeString(selectedFilters.platform);
     selectedFilters.mediaSourceNormalized = normalizeString(selectedFilters.mediaSource);
-    selectedFilters.adsetNormalized = normalizeIdKey(selectedFilters.adsetId);
-    selectedFilters.campaignNormalized = normalizeIdKey(selectedFilters.campaignId);
+    selectedFilters.adsetNormalized = normalizeString(selectedFilters.adsetId);
+    selectedFilters.campaignNormalized = normalizeString(selectedFilters.campaignId);
     selectedFilters.dayDiffNormalized = normalizeString(selectedFilters.dayDiff);
-    selectedFilters.adsetIsActive = adsetValueSet.has(selectedFilters.adsetNormalized);
     selectedFilters.campaignIsActive = campaignValueSet.has(selectedFilters.campaignNormalized);
 
     console.debug("[Retention] Selected filters", selectedFilters);
@@ -2084,12 +1496,7 @@ async function init() {
 
     const weekBuckets = getLastSevenWeekBuckets(new Date());
     const weeklyRows = weekBuckets.map((bucket) => {
-      const weekMatches = rawDumpRows.filter((row) =>
-        matchesRetentionFormulaRow(row, selectedFilters, bucket.iso, false)
-      );
-      const weekRateMatches = rawDumpRows.filter((row) =>
-        matchesRetentionFormulaRow(row, selectedFilters, bucket.iso, true)
-      );
+      const weekMatches = fullyFilteredRows.filter((row) => normalizeString(row.Install_Period) === normalizeString(bucket.iso));
       console.debug(`[Retention] Week ${bucket.iso} matched rows: ${weekMatches.length}`);
       if (weekMatches.length > 1) {
         console.warn(`[Retention] Multiple matches for week ${bucket.iso}; using first row.`);
@@ -2098,13 +1505,13 @@ async function init() {
         const stageChecks = [
           {
             name: "Install_Period",
-            count: rawDumpRows.filter((row) => normalizeDateKey(row.Install_Period) === normalizeDateKey(bucket.iso)).length
+            count: rawDumpRows.filter((row) => normalizeString(row.Install_Period) === normalizeString(bucket.iso)).length
           },
           {
             name: "Show_Name",
             count: rawDumpRows.filter(
               (row) =>
-                normalizeDateKey(row.Install_Period) === normalizeDateKey(bucket.iso) &&
+                normalizeString(row.Install_Period) === normalizeString(bucket.iso) &&
                 normalizeString(row.Show_Name) === selectedFilters.showNormalized
             ).length
           },
@@ -2112,7 +1519,7 @@ async function init() {
             name: "Platform",
             count: rawDumpRows.filter(
               (row) =>
-                normalizeDateKey(row.Install_Period) === normalizeDateKey(bucket.iso) &&
+                normalizeString(row.Install_Period) === normalizeString(bucket.iso) &&
                 normalizeString(row.Show_Name) === selectedFilters.showNormalized &&
                 normalizeString(row.Platform) === selectedFilters.platformNormalized
             ).length
@@ -2121,53 +1528,49 @@ async function init() {
             name: "Media_Source",
             count: rawDumpRows.filter(
               (row) =>
-                normalizeDateKey(row.Install_Period) === normalizeDateKey(bucket.iso) &&
+                normalizeString(row.Install_Period) === normalizeString(bucket.iso) &&
                 normalizeString(row.Show_Name) === selectedFilters.showNormalized &&
                 normalizeString(row.Platform) === selectedFilters.platformNormalized &&
-                getMediaSourceGroup(row.Media_Source) === selectedFilters.mediaSourceNormalized
+                normalizeString(row.Media_Source) === selectedFilters.mediaSourceNormalized
+            ).length
+          },
+          {
+            name: "Adset_ID",
+            count: rawDumpRows.filter(
+              (row) =>
+                normalizeString(row.Install_Period) === normalizeString(bucket.iso) &&
+                normalizeString(row.Show_Name) === selectedFilters.showNormalized &&
+                normalizeString(row.Platform) === selectedFilters.platformNormalized &&
+                normalizeString(row.Media_Source) === selectedFilters.mediaSourceNormalized &&
+                normalizeString(normalizeIdString(row.Adset_ID)) === selectedFilters.adsetNormalized
             ).length
           },
           {
             name: "day_diff",
             count: rawDumpRows.filter(
               (row) =>
-                normalizeDateKey(row.Install_Period) === normalizeDateKey(bucket.iso) &&
+                normalizeString(row.Install_Period) === normalizeString(bucket.iso) &&
                 normalizeString(row.Show_Name) === selectedFilters.showNormalized &&
                 normalizeString(row.Platform) === selectedFilters.platformNormalized &&
-                getMediaSourceGroup(row.Media_Source) === selectedFilters.mediaSourceNormalized &&
+                normalizeString(row.Media_Source) === selectedFilters.mediaSourceNormalized &&
+                normalizeString(normalizeIdString(row.Adset_ID)) === selectedFilters.adsetNormalized &&
                 normalizeString(row.day_diff) === selectedFilters.dayDiffNormalized
             ).length
           }
         ];
-
-        if (selectedFilters.adsetIsActive) {
-          stageChecks.push({
-            name: "Adset_ID",
-            count: rawDumpRows.filter(
-              (row) =>
-                normalizeDateKey(row.Install_Period) === normalizeDateKey(bucket.iso) &&
-                normalizeString(row.Show_Name) === selectedFilters.showNormalized &&
-                normalizeString(row.Platform) === selectedFilters.platformNormalized &&
-                getMediaSourceGroup(row.Media_Source) === selectedFilters.mediaSourceNormalized &&
-                normalizeString(row.day_diff) === selectedFilters.dayDiffNormalized &&
-                normalizeIdKey(row.Adset_ID) === selectedFilters.adsetNormalized
-            ).length
-          });
-        }
 
         if (selectedFilters.campaignIsActive) {
           stageChecks.push({
             name: "Campaign_ID",
             count: rawDumpRows.filter(
               (row) =>
-                normalizeDateKey(row.Install_Period) === normalizeDateKey(bucket.iso) &&
+                normalizeString(row.Install_Period) === normalizeString(bucket.iso) &&
                 normalizeString(row.Show_Name) === selectedFilters.showNormalized &&
                 normalizeString(row.Platform) === selectedFilters.platformNormalized &&
-                getMediaSourceGroup(row.Media_Source) === selectedFilters.mediaSourceNormalized &&
-                (!selectedFilters.adsetIsActive ||
-                  normalizeIdKey(row.Adset_ID) === selectedFilters.adsetNormalized) &&
+                normalizeString(row.Media_Source) === selectedFilters.mediaSourceNormalized &&
+                normalizeString(normalizeIdString(row.Adset_ID)) === selectedFilters.adsetNormalized &&
                 normalizeString(row.day_diff) === selectedFilters.dayDiffNormalized &&
-                normalizeIdKey(row.Campaign_ID) === selectedFilters.campaignNormalized
+                normalizeString(row.Campaign_ID) === selectedFilters.campaignNormalized
             ).length
           });
         }
@@ -2179,13 +1582,13 @@ async function init() {
         );
       }
 
-      const match = weekRateMatches[0] || weekMatches[0];
-      const installs = parseMetricNumber(match && match.Installs);
-      const cost = parseMetricNumber(match && match.Cost);
-      const h5Users = parseMetricNumber(match && match.H5_same_show_users);
-      const h10Users = parseMetricNumber(match && match.H10_same_show_users);
-      const h20Users = parseMetricNumber(match && match.H20_same_show_users);
-      const h40Users = parseMetricNumber(match && match.H40_same_show_users);
+      const match = weekMatches[0];
+      const installs = parseMetricNumber(match?.Installs);
+      const cost = parseMetricNumber(match?.Cost);
+      const h5Users = parseMetricNumber(match?.H5_same_show_users);
+      const h10Users = parseMetricNumber(match?.H10_same_show_users);
+      const h20Users = parseMetricNumber(match?.H20_same_show_users);
+      const h40Users = parseMetricNumber(match?.H40_same_show_users);
 
       const cpi = Number.isFinite(installs) && installs > 0 && Number.isFinite(cost) ? cost / installs : NaN;
       const h5 = Number.isFinite(installs) && installs > 0 && Number.isFinite(h5Users) ? h5Users / installs : NaN;
@@ -2261,21 +1664,6 @@ async function init() {
   retentionAdsetInput.addEventListener("blur", refreshRetentionFiltersAndRender);
   retentionCampaignInput.addEventListener("blur", refreshRetentionFiltersAndRender);
 
-  if (!hasSpendsPlanSource) {
-    setDumpHealthStatus("spendsPlan", {
-      source: "unavailable",
-      updatedAt: new Date().toISOString(),
-      details: "No spends plan source available"
-    });
-  }
-  if (!hasRawDumpSource) {
-    setDumpHealthStatus("retentionView", {
-      source: "unavailable",
-      updatedAt: new Date().toISOString(),
-      details: "No Retention View source available"
-    });
-  }
-  renderDumpHealthToggle();
   refreshRetentionFiltersAndRender();
 }
 
@@ -2303,9 +1691,7 @@ function initTabs() {
 
 try {
   initTabs();
-  init().catch((error) => {
-    document.body.textContent = error.message;
-  });
+  init();
 } catch (error) {
   document.body.textContent = error.message;
 }

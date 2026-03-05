@@ -4,7 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>iOS Performance Tables</title>
-    <link rel="icon" type="image/x-icon" href="./favicon.ico" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -12,12 +11,14 @@
       <header class="page-header">
         <p class="page-kicker">US Fantasy - Scaling Tracker</p>
         <h1 class="page-title"><strong>US Fantasy <em>Scaling</em></strong></h1>
+        <p class="page-meta">Static snapshot mode · Local file rendering</p>
       </header>
 
       <nav class="top-nav" aria-label="Top navigation tabs">
         <button class="tab-button is-active" data-tab-target="performance-tab" type="button">iOS Performance</button>
         <button class="tab-button" data-tab-target="ios-deepdive-tab" type="button">iOS Deepdive</button>
         <button class="tab-button" data-tab-target="spends-plan-tracking-tab" type="button">Spends Plan Tracking</button>
+        <button class="tab-button" data-tab-target="script-level-spends-tab" type="button">Script-level Spends</button>
         <button class="tab-button" data-tab-target="show-wise-recoveries-tab" type="button">Show Wise Recoveries</button>
         <button class="tab-button" data-tab-target="retention-view-tab" type="button">Retention View</button>
       </nav>
@@ -107,11 +108,15 @@
         </div>
       </section>
 
+      <section id="script-level-spends-tab" class="tab-panel" aria-labelledby="script-level-spends-tab-title">
+        <h1 id="script-level-spends-tab-title">Script-level Spends</h1>
+        <div class="table-wrapper">
+          <table id="script-level-spends-table" aria-label="Script-level Spends table"></table>
+        </div>
+      </section>
+
       <section id="show-wise-recoveries-tab" class="tab-panel" aria-labelledby="show-wise-recoveries-tab-title">
-        <h1 id="show-wise-recoveries-tab-title">
-          Show Wise Recoveries
-          <span class="wip-badge">WIP</span>
-        </h1>
+        <h1 id="show-wise-recoveries-tab-title">Show Wise Recoveries</h1>
         <label for="recoveries-show-select">Show Name</label>
         <select id="recoveries-show-select">
           <option value="MVS">MVS</option>
@@ -131,8 +136,8 @@
           week-by-week retention trends.
         </p>
         <ul class="retention-summary-list">
-          <li>Media Source options are grouped as Meta, Google Ads, and TikTok.</li>
-          <li>Adset ID and Campaign ID filters are optional for quick top-level analysis.</li>
+          <li>Ad Set ID selection is mandatory.</li>
+          <li>Campaign ID selection is optional.</li>
         </ul>
 
         <div class="retention-filters">
@@ -151,26 +156,14 @@
           <div class="filter-row">
             <label for="retention-adset-id-select">Adset ID</label>
             <div class="searchable-combobox">
-              <input
-                id="retention-adset-id-select"
-                type="text"
-                autocomplete="off"
-                inputmode="numeric"
-                placeholder="Any (Optional)"
-              />
+              <input id="retention-adset-id-select" type="text" autocomplete="off" />
               <div id="retention-adset-id-list" class="searchable-options" hidden></div>
             </div>
           </div>
           <div class="filter-row">
             <label for="retention-campaign-id-select">Campaign ID</label>
             <div class="searchable-combobox">
-              <input
-                id="retention-campaign-id-select"
-                type="text"
-                autocomplete="off"
-                inputmode="numeric"
-                placeholder="Any (Optional)"
-              />
+              <input id="retention-campaign-id-select" type="text" autocomplete="off" placeholder="Any (Optional)" />
               <div id="retention-campaign-id-list" class="searchable-options" hidden></div>
             </div>
           </div>
@@ -202,16 +195,6 @@
       </section>
     </main>
 
-    <div class="dump-health-widget" aria-live="polite">
-      <button id="dump-health-toggle" class="dump-health-toggle" type="button" aria-expanded="false">
-        Status
-      </button>
-      <section id="dump-health-panel" class="dump-health-panel" hidden>
-        <p><strong>Last refresh:</strong> <span id="dump-health-last-refresh">n/a</span></p>
-        <div id="dump-health-list" class="dump-health-list"></div>
-      </section>
-    </div>
-
     <script>
       const SHOW_CSV_TEXT_BY_KEY = {
         MVS: "Daily,,iOS Deep Dive,,,,,,,,,,,,,,,,,\r\nMy Vampire System,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\nDay,Cost,CPI,Listening D0,LDAU D0,Activation D0,Activation D3,Meta Spends (%),UAC Spends (%),TikTok Spends (%),,,,,,,,,,\r\n1-Mar-2026,$0.00,$0.00,0.00%,0.00%,0.00%,0.00%,0.00%,0.00%,0.00%,,,,,,,,,,\r\n28-Feb-2026,\"$11,414.85\",$16.56,74.73%,55.14%,17.70%,22.49%,48.95%,33.74%,17.31%,,,,,,,,,,\r\n27-Feb-2026,\"$17,069.31\",$28.23,71.78%,54.74%,18.03%,27.29%,63.61%,24.70%,11.69%,,,,,,,,,,\r\n26-Feb-2026,\"$10,768.00\",$26.81,71.47%,52.04%,20.92%,30.63%,41.13%,40.27%,18.61%,,,,,,,,,,\r\n25-Feb-2026,\"$14,286.74\",$27.03,74.18%,54.50%,21.76%,30.28%,53.87%,32.11%,14.02%,,,,,,,,,,\r\n24-Feb-2026,\"$12,731.61\",$24.56,73.68%,54.78%,19.09%,31.25%,52.41%,31.84%,15.75%,,,,,,,,,,\r\n23-Feb-2026,\"$13,650.78\",$34.70,74.73%,56.68%,22.88%,33.30%,48.76%,36.51%,14.73%,,,,,,,,,,\r\n22-Feb-2026,\"$13,459.71\",$29.60,74.55%,55.64%,22.87%,32.99%,54.52%,30.52%,14.96%,,,,,,,,,,\r\n21-Feb-2026,\"$11,614.08\",$26.75,71.16%,50.66%,14.51%,25.10%,43.35%,39.48%,17.17%,,,,,,,,,,\r\n20-Feb-2026,\"$15,523.26\",$34.22,73.18%,54.45%,23.59%,31.52%,57.95%,29.18%,12.87%,,,,,,,,,,\r\n19-Feb-2026,\"$11,777.68\",$26.39,74.18%,56.02%,21.74%,31.82%,49.44%,38.62%,11.94%,,,,,,,,,,\r\n18-Feb-2026,\"$11,901.09\",$25.93,73.21%,57.09%,21.79%,32.03%,50.83%,37.38%,11.79%,,,,,,,,,,\r\n17-Feb-2026,\"$12,001.25\",$28.09,74.21%,56.88%,23.41%,31.84%,54.53%,37.12%,8.35%,,,,,,,,,,\r\n16-Feb-2026,\"$12,099.91\",$24.27,71.41%,52.76%,18.66%,27.28%,52.40%,39.30%,8.30%,,,,,,,,,,\r\n15-Feb-2026,\"$11,484.38\",$23.55,72.17%,52.08%,19.68%,30.14%,48.66%,42.59%,8.75%,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\nWeekly,,,,,,,,,,,,,,,,,,,\r\nMy Vampire System,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\nWeek,Cost,CPI,Listening D7,LDAU D7,Activation D3,Activation D7,Conversion D7,ARPU D7,Recovery D7,SS D7H10,CPFW D7,D15 CPFSW,D30 CPFSW,Meta Spends (%),UAC Spends (%),TikTok Spends (%),Meta Spends ($),UAC Spends ($),TikTok Spends ($)\r\n2-Mar-2026,$0.00,$0.00,0.00%,0.00%,0.00%,0.00%,0.00%,$0.00,0.00%,0.00%,$0.00,,,0.00%,0.00%,0.00%,$0.00,$0.00,$0.00\r\n23-Feb-2026,\"$88,028.85\",$23.74,75.36%,58.12%,27.21%,27.54%,3.02%,$0.71,3.00%,3.45%,\"$4,890.49\",,,52.43%,32.57%,15.01%,\"$46,149.45\",\"$28,668.87\",\"$13,210.53\"\r\n16-Feb-2026,\"$88,376.98\",$27.85,75.56%,60.38%,30.35%,32.46%,5.36%,$1.36,4.90%,7.97%,\"$4,017.14\",,,52.19%,35.56%,12.24%,\"$46,124.05\",\"$31,431.26\",\"$10,821.66\"\r\n9-Feb-2026,\"$79,440.66\",$23.31,76.16%,60.79%,31.71%,33.80%,5.60%,$1.44,6.16%,9.09%,\"$2,562.60\",\"$2,942.25\",,50.26%,40.92%,8.82%,\"$39,930.78\",\"$32,507.11\",\"$7,002.78\"\r\n2-Feb-2026,\"$81,439.73\",$22.93,76.90%,57.67%,26.55%,29.06%,4.67%,$0.99,4.33%,6.53%,\"$3,878.08\",\"$7,403.61\",,53.28%,38.14%,8.57%,\"$43,394.40\",\"$31,062.68\",\"$6,982.65\"\r\n26-Jan-2026,\"$84,098.66\",$23.10,77.42%,60.09%,30.46%,32.44%,6.18%,$1.28,5.55%,8.05%,\"$3,234.56\",\"$3,234.56\",\"$1,475.42\",57.15%,34.82%,8.03%,\"$48,061.04\",\"$29,282.90\",\"$6,754.72\"\r\n19-Jan-2026,\"$68,232.38\",$19.32,79.78%,62.59%,30.89%,33.09%,5.44%,$1.25,6.49%,7.22%,\"$2,966.63\",\"$2,843.02\",\"$1,364.65\",39.85%,49.51%,10.64%,\"$27,193.29\",\"$33,781.22\",\"$7,257.87\"\r\n12-Jan-2026,\"$57,381.63\",$17.62,78.84%,59.16%,30.32%,32.34%,5.44%,$1.44,8.15%,6.70%,\"$2,494.85\",\"$3,187.87\",\"$1,510.04\",17.34%,70.46%,12.20%,\"$9,947.30\",\"$40,430.92\",\"$7,003.42\"\r\n5-Jan-2026,\"$70,678.32\",$24.29,75.16%,52.79%,25.71%,27.77%,5.33%,$1.62,6.66%,5.43%,\"$4,157.55\",\"$3,533.92\",\"$1,859.96\",10.82%,82.11%,7.07%,\"$7,645.39\",\"$58,034.57\",\"$4,998.36\"\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,\r\nDaily View >> Performance+Spends Distribution (Media Source),,,,,,,,,,,,,,,,,,,\r\nWeekly View >> Performance+Spends Distribution (Media Source),,,,,,,,,,,,,,,,,,,",
@@ -226,12 +209,8 @@
         WBT: " ,,23-Feb,27-Feb,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,D3 Complete Day - Latest,23-Feb,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,D7 Complete Day - Latest,19-Feb,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,D15 Complete Day - Latest,12-Feb,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,Show,Weakest Beast Tamer,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,Sub-Team,\"<>Re-engagement,Affiliates\",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,Language,<>spanish,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,Refresh Date,27-Feb,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,,Weakest Beast Tamer,Week of >,,,,,,,,30-Jan,,5-Feb,Week of >,,,,,,,,6-Feb,,12-Feb,Week of >,,,13-Feb,,19-Feb,Week of >,,17-Feb,23-Feb,Current DRR (D-2),Current CPI (D-2),Spends% (D-2),\"Spends%(D-2)\nPlatform Level\",,\r\n,,,,D3,D7,D15,Cost,CPI,M9 (proj.) Revenue (D7),M9 (proj.) Revenue (D15 NSSW),M9 (proj.) Revenue (D15 FSW),Payback D7,Payback D15 CPNSSW,Payback D15 CPFSW,D3,D7,D15,Cost,CPI,M9 (proj.) Revenue (D7),M9 (proj.) Revenue (D15 NSSW),M9 (proj.) Revenue (D15),Payback D7,Payback D15 CPNSSW,Payback D15,D3,D7,Cost,CPI,M9 Revenue (D7),Payback D7,D3,Cost,CPI,Potential Payback,,,,,,\r\n,,,All (w/ Testing),2.9%,8.2%,17.6%,\"159,186\",21.0,\"347,579\",\"406,870\",\"343,675\",6.0,6.0,6.0,2.56%,7.28%,16.62%,\"152,889\",19.4,\"295,071\",\"363,277\",\"326,773\",6.00,6.00,6.00,2.9%,8.8%,\"163,781\",18.2,\"383,720\",6.00,3.0%,\"173,008\",19.4,,\"21,033\",20.7,,,,\r\n,,,Growth,2.9%,8.3%,17.8%,\"157,173\",21.7,\"347,023\",\"406,870\",\"343,675\",6.0,6.0,6.0,2.63%,7.45%,17.03%,\"148,825\",20.35,\"294,012\",\"363,277\",\"326,773\",6.00,6.00,6.00,2.9%,8.8%,\"158,212\",18.78,\"367,299\",6.00,3.0%,\"160,170\",20.7,,\"19,231\",22.5,100.0%,,,\r\n,,,Android,3.0%,8.4%,17.7%,\"79,123\",17.0,\"176,473\",\"213,123\",\"152,118\",6.0,6.0,6.0,3.1%,8.5%,19.5%,\"79,338\",18.2,\"178,951\",\"217,966\",\"185,922\",6.0,6.0,6.0,2.3%,7.4%,\"86,466\",18.2,\"169,466\",6.0,2.7%,\"86,405\",18.7,,\"8,345\",18.5,43.4%,Android,,\r\n,,,Facebook,1.3%,4.8%,10.2%,\"34,575\",15.9,\"44,342\",\"58,124\",\"28,170\",11.7,7.0,19.5,2.0%,4.6%,10.8%,\"35,071\",16.8,\"42,566\",\"62,968\",\"50,706\",12.6,6.00,9.6,1.9%,8.0%,\"36,318\",16.3,\"77,101\",6.0,3.0%,\"35,663\",18.0,,\"3,632\",17,18.9%,43.5%,,\r\n,,,Google,4.4%,11.1%,18.9%,\"30,587\",23.2,\"90,216\",\"82,343\",\"61,974\",6.0,6.0,6.0,3.2%,10.7%,23.8%,\"30,254\",25.0,\"85,587\",\"96,874\",\"101,412\",6.0,6.00,6.0,2.25%,4.9%,\"30,582\",27.2,\"40,018\",11.3,2.75%,\"26,056\",24.0,,\"1,702\",27,8.9%,20.4%,,\r\n,,,Tik Tok,1.6%,5.5%,14.9%,\"13,961\",29.3,\"20,417\",\"29,062\",\"28,170\",9.4,6.0,6.0,1.7%,5.7%,15.0%,\"14,013\",31.5,\"21,289\",\"24,218\",\"22,536\",8.8,6.57,7.8,2.70%,7.5%,\"14,006\",31.1,\"27,987\",6.0,1.02%,\"14,006\",31.3,,\"2,003\",42,10.4%,24.0%,,$19.49\r\n,,,Organic,,,,,,\"16,204\",\"29,062\",\"33,804\",,,,,,,,,\"24,956\",\"24,218\",\"5,634\",,,,,,,,\"5,345\",,,,,,,,0.0%,,,6.49%\r\n,,,iOS,2.9%,8.2%,17.8%,\"78,050\",30.2,\"170,551\",\"193,748\",\"191,557\",6.0,6.0,6.0,2.1%,6.2%,14.2%,\"69,487\",23.6,\"115,062\",\"145,311\",\"140,850\",7.3,6.0,6.0,3.7%,10.5%,\"71,746\",19.5,\"199,447\",6.0,3.3%,\"73,765\",23.8,,\"10,886\",27,56.6%,iOS,,4.31%\r\n,,,Facebook,,,,\"35,023\",,,,,,,,,,,\"33,618\",,,,,,,,,,\"33,894\",,,,,\"35,013\",,,\"6,565\",0,34.1%,60.3%,,2.63%\r\n,,,Google,,,,\"29,063\",,,,,,,,,,,\"21,888\",,,,,,,,,,\"22,835\",,,,,\"21,734\",,,\"1,811\",0,9.4%,16.6%,,\r\n,,,Tik Tok,,,,\"13,963\",,,,,,,,,,,\"13,981\",,,,,,,,,,\"15,017\",,,,,\"17,017\",,,\"2,510\",0,13.1%,23.1%,,\r\n,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,Retention Benchmark for M9 Paybacks\t\t,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,CPI  (Input here >>),$49.00,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,D7H10 ,16.32%,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,D15H20 ,10.84%,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,D30H40,6.61%,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,CPI tolerance at script level,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,Try low hanging script on RoAS ad set,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,Try them at specific age group,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,\r\n,,,,,,,,,,, ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"
       };
     </script>
-    <script>
-      window.IOS_PERFORMANCE_DUMP_API_URL =
-        "https://script.google.com/macros/s/AKfycbyL126fntw3tGFi1BQjmI89InuuHrKa04vjiwE6DPV_F7hDA8olqHggbLXbwuh6UsjzUA/exec";
-      window.IOS_PERFORMANCE_DUMP_AUTH_TOKEN = "4s7nhrdksvtdx3gql020";
-    </script>
     <script src="./deepdive-data.js"></script>
+    <script src="./script-level-spends-data.js"></script>
     <script src="./script.js"></script>
   </body>
 </html>
