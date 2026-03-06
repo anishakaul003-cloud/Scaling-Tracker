@@ -592,6 +592,369 @@ function buildRecoveriesRowsMap(recoveriesCsvTextByKey) {
   return rowsByShow;
 }
 
+function buildCsvRecords(csvText) {
+  const rows = parseCsv(csvText);
+  if (rows.length < 2) {
+    return [];
+  }
+  const headers = rows[0];
+  return rows.slice(1).map((row) => {
+    const record = {};
+    headers.forEach((header, index) => {
+      record[header] = row[index] ?? "";
+    });
+    return record;
+  });
+}
+
+function parseFormulaMetricDefinitions(formulaCsvText) {
+  const rows = parseCsv(formulaCsvText);
+  const baseSumRanges = new Set();
+  const costSumRanges = new Set();
+  const derived = new Set();
+
+  rows.forEach((row) => {
+    const formula = row[1] || "";
+    if (!formula) {
+      return;
+    }
+    const baseMatches = formula.match(/Base_Data!\$([A-Z]+):\$([A-Z]+)/g) || [];
+    baseMatches.forEach((match) => {
+      const column = match.replace("Base_Data!$", "").replace(/:\$[A-Z]+/, "");
+      baseSumRanges.add(column);
+    });
+    const costMatches = formula.match(/Cost_Data!\$([A-Z]+):\$([A-Z]+)/g) || [];
+    costMatches.forEach((match) => {
+      const column = match.replace("Cost_Data!$", "").replace(/:\$[A-Z]+/, "");
+      costSumRanges.add(column);
+    });
+    if (formula.includes("/")) {
+      derived.add("ratio_metrics");
+    }
+    if (formula.includes("IFERROR")) {
+      derived.add("error_safe_metrics");
+    }
+  });
+
+  return {
+    baseSumRanges: Array.from(baseSumRanges),
+    costSumRanges: Array.from(costSumRanges),
+    derivedMetrics: Array.from(derived)
+  };
+}
+
+function colNumberToLetters(colNumber) {
+  let n = colNumber;
+  let result = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    result = String.fromCharCode(65 + rem) + result;
+    n = Math.floor((n - 1) / 26);
+  }
+  return result;
+}
+
+function buildLayoutGrid(layoutCsvText, maxRows = 24, maxCol = 33) {
+  const rows = parseCsv(layoutCsvText).slice(0, maxRows).map((row) => row.slice(0, maxCol));
+  const cellMap = new Map();
+  rows.forEach((row, rowIndex) => {
+    for (let colIndex = 0; colIndex < maxCol; colIndex += 1) {
+      const a1 = `${colNumberToLetters(colIndex + 1)}${rowIndex + 1}`;
+      cellMap.set(a1, row[colIndex] ?? "");
+    }
+  });
+  return { rows, cellMap };
+}
+
+function parseSheetStyleDateToIso(dateText, fallbackYear) {
+  const label = String(dateText || "").trim();
+  const match = label.match(/^(\d{1,2})-([A-Za-z]{3})$/);
+  if (!match) return "";
+  const day = Number(match[1]);
+  const monthMap = {
+    jan: 0,
+    feb: 1,
+    mar: 2,
+    apr: 3,
+    may: 4,
+    jun: 5,
+    jul: 6,
+    aug: 7,
+    sep: 8,
+    oct: 9,
+    nov: 10,
+    dec: 11
+  };
+  const month = monthMap[match[2].toLowerCase()];
+  if (!Number.isFinite(day) || month === undefined) return "";
+  const dateObj = new Date(fallbackYear, month, day);
+  return toIsoDateString(toMidnightDate(dateObj));
+}
+
+function formatPct(value) {
+  if (!Number.isFinite(value)) {
+    return "0.0%";
+  }
+  return `${value.toFixed(1)}%`;
+}
+
+function parseDateField(value) {
+  const parsed = parseIsoDate(value);
+  return parsed ? toMidnightDate(parsed) : null;
+}
+
+function isExcludedSubTeam(value, selectedSubTeam) {
+  const normalized = normalizeString(value);
+  if (selectedSubTeam === "__exclude_reengagement_affiliates__") {
+    return normalized === "re-engagement" || normalized === "affiliates";
+  }
+  return normalizeString(selectedSubTeam) !== "all" && normalizeString(selectedSubTeam) !== normalized;
+}
+
+function isExcludedLanguage(value, selectedLanguage) {
+  const normalized = normalizeString(value);
+  if (selectedLanguage === "__exclude_spanish__") {
+    return normalized === "spanish";
+  }
+  return normalizeString(selectedLanguage) !== "all" && normalizeString(selectedLanguage) !== normalized;
+}
+
+function filterRecoveriesBaseRows(baseRows, filters, segmentPredicate) {
+  const refreshIso = filters.refreshDate;
+  return baseRows.filter((row) => {
+    if (row.refresh_date !== refreshIso) return false;
+    if (normalizeString(row.first_listening_show_title_v1) !== normalizeString(filters.show)) return false;
+    if (isExcludedSubTeam(row.sub_team, filters.subTeam)) return false;
+    if (isExcludedLanguage(row.first_listening_show_language_v1, filters.language)) return false;
+    return segmentPredicate(row);
+  });
+}
+
+function filterRecoveriesCostRows(costRows, filters, segmentPredicate) {
+  const refreshIso = filters.refreshDate;
+  return costRows.filter((row) => {
+    if (row.refresh_date !== refreshIso) return false;
+    if (normalizeString(row.ad_show_title_final) !== normalizeString(filters.show)) return false;
+    if (isExcludedSubTeam(row.sub_team, filters.subTeam)) return false;
+    if (isExcludedLanguage(row.ad_show_language_final, filters.language)) return false;
+    return segmentPredicate(row);
+  });
+}
+
+function sumNumber(rows, fieldName) {
+  return rows.reduce((sum, row) => sum + (parseScaleNumber(row[fieldName]) || 0), 0);
+}
+
+function inRange(dateValue, rangeStart, rangeEnd) {
+  if (!(dateValue instanceof Date)) return false;
+  return dateValue >= rangeStart && dateValue <= rangeEnd;
+}
+
+function buildRecoveriesMetricEngine(baseRows, costRows) {
+  const refreshDates = Array.from(
+    new Set(baseRows.map((row) => row.refresh_date).filter((value) => (value || "").trim() !== ""))
+  ).sort((a, b) => b.localeCompare(a));
+
+  const shows = Array.from(
+    new Set(baseRows.map((row) => row.first_listening_show_title_v1).filter((value) => (value || "").trim() !== ""))
+  ).sort((a, b) => a.localeCompare(b));
+
+  const subTeams = Array.from(
+    new Set(baseRows.map((row) => row.sub_team).filter((value) => (value || "").trim() !== ""))
+  ).sort((a, b) => a.localeCompare(b));
+
+  const languages = Array.from(
+    new Set(baseRows.map((row) => row.first_listening_show_language_v1).filter((value) => (value || "").trim() !== ""))
+  ).sort((a, b) => a.localeCompare(b));
+
+  const isTikTokSource = (value) => normalizeString(value).replace(/\s+/g, "").includes("tiktok");
+  const segments = [
+    { label: "All (w/ Testing)", base: () => true, cost: () => true },
+    {
+      label: "Growth",
+      base: (row) => ["scaling", "testing"].includes(normalizeString(row.campaign_type)),
+      cost: (row) => ["scaling", "testing"].includes(normalizeString(row.campaign_type))
+    },
+    {
+      label: "Android",
+      base: (row) => normalizeString(row.platform_v1) === "android",
+      cost: (row) => normalizeString(row.platform) === "android"
+    },
+    {
+      label: "    Facebook",
+      base: (row) => normalizeString(row.platform_v1) === "android" && normalizeString(row.media_source_v1) === "facebook",
+      cost: (row) => normalizeString(row.platform) === "android" && normalizeString(row.media_source) === "facebook"
+    },
+    {
+      label: "    Google",
+      base: (row) => normalizeString(row.platform_v1) === "android" && normalizeString(row.media_source_v1) === "google",
+      cost: (row) => normalizeString(row.platform) === "android" && normalizeString(row.media_source) === "google"
+    },
+    {
+      label: "    TikTok",
+      base: (row) => normalizeString(row.platform_v1) === "android" && isTikTokSource(row.media_source_v1),
+      cost: (row) => normalizeString(row.platform) === "android" && isTikTokSource(row.media_source)
+    },
+    {
+      label: "    Organic",
+      base: (row) => normalizeString(row.platform_v1) === "android" && normalizeString(row.media_source_v1) === "organic",
+      cost: (row) => normalizeString(row.platform) === "android" && normalizeString(row.media_source) === "organic"
+    },
+    {
+      label: "iOS",
+      base: (row) => normalizeString(row.platform_v1) === "ios",
+      cost: (row) => normalizeString(row.platform) === "ios"
+    },
+    {
+      label: "    Facebook",
+      base: (row) => normalizeString(row.platform_v1) === "ios" && normalizeString(row.media_source_v1) === "facebook",
+      cost: (row) => normalizeString(row.platform) === "ios" && normalizeString(row.media_source) === "facebook"
+    },
+    {
+      label: "    Google",
+      base: (row) => normalizeString(row.platform_v1) === "ios" && normalizeString(row.media_source_v1) === "google",
+      cost: (row) => normalizeString(row.platform) === "ios" && normalizeString(row.media_source) === "google"
+    },
+    {
+      label: "    TikTok",
+      base: (row) => normalizeString(row.platform_v1) === "ios" && isTikTokSource(row.media_source_v1),
+      cost: (row) => normalizeString(row.platform) === "ios" && isTikTokSource(row.media_source)
+    }
+  ];
+
+  function computeRows(filters) {
+    const refreshDate = parseDateField(filters.refreshDate);
+    if (!refreshDate) {
+      return [];
+    }
+    const d3Latest = addDays(refreshDate, -4);
+    const d7Latest = addDays(refreshDate, -8);
+    const d15Latest = addDays(refreshDate, -15);
+    const windows = [
+      { flag: "D3", start: addDays(d3Latest, -6), end: d3Latest },
+      { flag: "D7", start: addDays(d7Latest, -6), end: d7Latest },
+      { flag: "D15", start: addDays(d15Latest, -6), end: d15Latest }
+    ];
+
+    const rows = segments.map((segment) => {
+      const segmentBaseRows = filterRecoveriesBaseRows(baseRows, filters, segment.base);
+      const segmentCostRows = filterRecoveriesCostRows(costRows, filters, segment.cost);
+      const metricByFlag = {};
+
+      windows.forEach((window) => {
+        const baseInWindow = segmentBaseRows.filter((row) => {
+          const dateValue = parseDateField(row.install_date_v1);
+          return inRange(dateValue, window.start, window.end) && normalizeString(row.day_flag) === normalizeString(window.flag);
+        });
+        const costInWindow = segmentCostRows.filter((row) => {
+          const dateValue = parseDateField(row.date);
+          return inRange(dateValue, window.start, window.end);
+        });
+        const sameShowRevenue = sumNumber(baseInWindow, "same_show_revenue");
+        const totalCost = sumNumber(costInWindow, "total_cost_dollars");
+        metricByFlag[window.flag] = totalCost > 0 ? (sameShowRevenue / totalCost) * 100 : 0;
+      });
+
+      const costCurrentWindow = segmentCostRows.filter((row) => {
+        const dateValue = parseDateField(row.date);
+        return inRange(dateValue, windows[0].start, windows[0].end);
+      });
+      const baseCurrentWindow = segmentBaseRows.filter((row) => {
+        const dateValue = parseDateField(row.install_date_v1);
+        return inRange(dateValue, windows[0].start, windows[0].end);
+      });
+
+      const totalCost = sumNumber(costCurrentWindow, "total_cost_dollars");
+      const installs = sumNumber(baseCurrentWindow, "installs");
+      const m9D7 = sumNumber(baseCurrentWindow, "M9_revenue_d7_projected");
+      const m9D15CpNssw = sumNumber(baseCurrentWindow, "M9_revenue_d15_projected_cpnsw");
+      const m9D15CpFsw = sumNumber(baseCurrentWindow, "M9_revenue_d15_projected_cpfsw");
+      return {
+        segment: segment.label,
+        d3: metricByFlag.D3 || 0,
+        d7: metricByFlag.D7 || 0,
+        d15: metricByFlag.D15 || 0,
+        cost: totalCost,
+        cpi: installs > 0 ? totalCost / installs : 0,
+        m9d7: m9D7,
+        m9d15cpnssw: m9D15CpNssw,
+        m9d15cpfsw: m9D15CpFsw,
+        paybackD7: totalCost > 0 ? (m9D7 / totalCost) * 100 : 0,
+        paybackD15cpnssw: totalCost > 0 ? (m9D15CpNssw / totalCost) * 100 : 0
+      };
+    });
+    return {
+      rows,
+      dates: {
+        d3Latest: toIsoDateString(d3Latest),
+        d7Latest: toIsoDateString(d7Latest),
+        d15Latest: toIsoDateString(d15Latest),
+        m10: toIsoDateString(windows[0].start),
+        o10: toIsoDateString(windows[0].end)
+      }
+    };
+  }
+
+  return { refreshDates, shows, subTeams, languages, computeRows };
+}
+
+function renderShowWiseRecoveriesEngineTable(tableId, rows) {
+  const table = document.getElementById(tableId);
+  table.textContent = "";
+
+  const headers = [
+    "Segment",
+    "D3",
+    "D7",
+    "D15",
+    "Cost",
+    "CPI",
+    "M9 Revenue (D7)",
+    "M9 (proj) Rev (D15 NSSW)",
+    "M9 (proj) Rev (D15 FSW)",
+    "Payback D7",
+    "Payback D15 CPNSSW"
+  ];
+
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  headers.forEach((header) => {
+    const th = document.createElement("th");
+    th.textContent = header;
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    const values = [
+      row.segment,
+      formatPct(row.d3),
+      formatPct(row.d7),
+      formatPct(row.d15),
+      formatCurrency(row.cost),
+      formatCurrency(row.cpi),
+      formatCurrency(row.m9d7),
+      formatCurrency(row.m9d15cpnssw),
+      formatCurrency(row.m9d15cpfsw),
+      formatPct(row.paybackD7),
+      formatPct(row.paybackD15cpnssw)
+    ];
+    values.forEach((value, index) => {
+      const td = document.createElement("td");
+      td.textContent = value;
+      if (index === 0) {
+        td.classList.add("metric-primary");
+      }
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+}
+
 function uniqueSorted(values) {
   return Array.from(new Set(values.filter((value) => value !== ""))).sort((a, b) => a.localeCompare(b));
 }
@@ -1272,19 +1635,120 @@ function init() {
   const scriptLevelSpendsRows = extractScriptLevelSpendsRows(scriptLevelSpendsCsvText);
   renderScriptLevelSpendsTable("script-level-spends-table", scriptLevelSpendsRows);
 
-  if (typeof RECOVERIES_CSV_TEXT_BY_KEY !== "object" || RECOVERIES_CSV_TEXT_BY_KEY === null) {
-    throw new Error("RECOVERIES_CSV_TEXT_BY_KEY is not available in index.html");
+  if (typeof SHOW_WISE_BASE_DATA_CSV_TEXT !== "string") {
+    throw new Error("SHOW_WISE_BASE_DATA_CSV_TEXT is not available in recoveries-data.js");
   }
-  const recoveriesRowsByShow = buildRecoveriesRowsMap(RECOVERIES_CSV_TEXT_BY_KEY);
-  const recoveriesSelect = document.getElementById("recoveries-show-select");
-
-  function renderSelectedRecoveriesShow() {
-    const selectedShow = recoveriesSelect.value;
-    renderRawGridTable("recoveries-table", recoveriesRowsByShow[selectedShow] || []);
+  if (typeof SHOW_WISE_COST_DATA_CSV_TEXT !== "string") {
+    throw new Error("SHOW_WISE_COST_DATA_CSV_TEXT is not available in recoveries-data.js");
+  }
+  if (typeof SHOW_WISE_FORMULA_MAP_CSV_TEXT !== "string") {
+    throw new Error("SHOW_WISE_FORMULA_MAP_CSV_TEXT is not available in recoveries-data.js");
+  }
+  if (typeof SHOW_WISE_LAYOUT_CSV_TEXT !== "string") {
+    throw new Error("SHOW_WISE_LAYOUT_CSV_TEXT is not available in recoveries-data.js");
   }
 
-  recoveriesSelect.addEventListener("change", renderSelectedRecoveriesShow);
-  renderSelectedRecoveriesShow();
+  const recoveriesBaseRows = buildCsvRecords(SHOW_WISE_BASE_DATA_CSV_TEXT);
+  const recoveriesCostRows = buildCsvRecords(SHOW_WISE_COST_DATA_CSV_TEXT);
+  const recoveriesFormulaDefinitions = parseFormulaMetricDefinitions(SHOW_WISE_FORMULA_MAP_CSV_TEXT);
+  console.debug("[ShowWiseRecoveries] Formula-derived metric definitions", recoveriesFormulaDefinitions);
+  const recoveriesLayoutGrid = buildLayoutGrid(SHOW_WISE_LAYOUT_CSV_TEXT, 24, 33);
+  const recoveriesEngine = buildRecoveriesMetricEngine(recoveriesBaseRows, recoveriesCostRows);
+
+  const recoveriesRefreshDateSelect = document.getElementById("recoveries-refresh-date-select");
+  const recoveriesShowSelect = document.getElementById("recoveries-show-select");
+  const recoveriesSubTeamSelect = document.getElementById("recoveries-sub-team-select");
+  const recoveriesLanguageSelect = document.getElementById("recoveries-language-select");
+
+  recoveriesEngine.refreshDates.forEach((refreshDate) => {
+    const option = document.createElement("option");
+    option.value = refreshDate;
+    option.textContent = formatDateLabel(parseIsoDate(refreshDate));
+    recoveriesRefreshDateSelect.appendChild(option);
+  });
+
+  recoveriesEngine.shows.forEach((showName) => {
+    const option = document.createElement("option");
+    option.value = showName;
+    option.textContent = showName;
+    recoveriesShowSelect.appendChild(option);
+  });
+
+  const defaultSubTeamOption = document.createElement("option");
+  defaultSubTeamOption.value = "__exclude_reengagement_affiliates__";
+  defaultSubTeamOption.textContent = "Exclude Re-engagement, Affiliates";
+  recoveriesSubTeamSelect.appendChild(defaultSubTeamOption);
+  const allSubTeamsOption = document.createElement("option");
+  allSubTeamsOption.value = "all";
+  allSubTeamsOption.textContent = "All";
+  recoveriesSubTeamSelect.appendChild(allSubTeamsOption);
+  recoveriesEngine.subTeams.forEach((subTeam) => {
+    const option = document.createElement("option");
+    option.value = subTeam;
+    option.textContent = subTeam;
+    recoveriesSubTeamSelect.appendChild(option);
+  });
+  recoveriesSubTeamSelect.value = "__exclude_reengagement_affiliates__";
+
+  const defaultLanguageOption = document.createElement("option");
+  defaultLanguageOption.value = "__exclude_spanish__";
+  defaultLanguageOption.textContent = "Exclude Spanish";
+  recoveriesLanguageSelect.appendChild(defaultLanguageOption);
+  const allLanguagesOption = document.createElement("option");
+  allLanguagesOption.value = "all";
+  allLanguagesOption.textContent = "All";
+  recoveriesLanguageSelect.appendChild(allLanguagesOption);
+  recoveriesEngine.languages.forEach((language) => {
+    const option = document.createElement("option");
+    option.value = language;
+    option.textContent = language;
+    recoveriesLanguageSelect.appendChild(option);
+  });
+  recoveriesLanguageSelect.value = "__exclude_spanish__";
+
+  const latestRefreshYear = parseIsoDate(recoveriesEngine.refreshDates[0])?.getFullYear() || new Date().getFullYear();
+  const layoutRefreshIso = parseSheetStyleDateToIso(recoveriesLayoutGrid.cellMap.get("D1"), latestRefreshYear);
+  if (layoutRefreshIso && recoveriesEngine.refreshDates.includes(layoutRefreshIso)) {
+    recoveriesRefreshDateSelect.value = layoutRefreshIso;
+  }
+  const layoutShow = (recoveriesLayoutGrid.cellMap.get("D5") || "").trim();
+  if (layoutShow && recoveriesEngine.shows.includes(layoutShow)) {
+    recoveriesShowSelect.value = layoutShow;
+  }
+  const layoutSubTeam = normalizeString(recoveriesLayoutGrid.cellMap.get("D6"));
+  if (layoutSubTeam.includes("<>re-engagement") && layoutSubTeam.includes("affiliates")) {
+    recoveriesSubTeamSelect.value = "__exclude_reengagement_affiliates__";
+  }
+  const layoutLanguage = normalizeString(recoveriesLayoutGrid.cellMap.get("D7"));
+  if (layoutLanguage.includes("<>spanish")) {
+    recoveriesLanguageSelect.value = "__exclude_spanish__";
+  }
+
+  function renderShowWiseRecoveriesDashboard() {
+    const filters = {
+      refreshDate: recoveriesRefreshDateSelect.value || recoveriesEngine.refreshDates[0] || "",
+      show: recoveriesShowSelect.value || recoveriesEngine.shows[0] || "",
+      subTeam: recoveriesSubTeamSelect.value || "__exclude_reengagement_affiliates__",
+      language: recoveriesLanguageSelect.value || "__exclude_spanish__"
+    };
+    const computed = recoveriesEngine.computeRows(filters);
+    renderShowWiseRecoveriesEngineTable("recoveries-table", computed.rows);
+    const h12 = computed.rows[0]?.cost ?? 0;
+    const d12 = computed.rows[0]?.segment ?? "";
+    const baseFilteredCount = filterRecoveriesBaseRows(recoveriesBaseRows, filters, () => true).length;
+    const costFilteredCount = filterRecoveriesCostRows(recoveriesCostRows, filters, () => true).length;
+    console.debug("[ShowWiseRecoveries][Validation] H12=", h12);
+    console.debug("[ShowWiseRecoveries][Validation] M10=", computed.dates.m10);
+    console.debug("[ShowWiseRecoveries][Validation] O10=", computed.dates.o10);
+    console.debug("[ShowWiseRecoveries][Validation] D12=", d12);
+    console.debug("[ShowWiseRecoveries][Validation] FilteredRowCounts base=", baseFilteredCount, "cost=", costFilteredCount);
+  }
+
+  recoveriesRefreshDateSelect.addEventListener("change", renderShowWiseRecoveriesDashboard);
+  recoveriesShowSelect.addEventListener("change", renderShowWiseRecoveriesDashboard);
+  recoveriesSubTeamSelect.addEventListener("change", renderShowWiseRecoveriesDashboard);
+  recoveriesLanguageSelect.addEventListener("change", renderShowWiseRecoveriesDashboard);
+  renderShowWiseRecoveriesDashboard();
 
   if (typeof RAW_DUMP_CSV_TEXT !== "string") {
     throw new Error("RAW_DUMP_CSV_TEXT is not available in index.html");

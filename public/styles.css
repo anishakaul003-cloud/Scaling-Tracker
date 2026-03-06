@@ -586,8 +586,7 @@ tbody tr:hover td {
 }
 
 /* Raw-grid tables use td-only rows; tint the first visible row as the header row. */
-#spends-plan-table tbody tr:first-child td,
-#recoveries-table tbody tr:first-child td {
+#spends-plan-table tbody tr:first-child td {
   background: color-mix(in srgb, var(--bg-gradient-top) 62%, #f7f4e7 38%);
   color: #314138;
   font-weight: 700;
@@ -597,6 +596,25 @@ tbody tr:hover td {
 #show-wise-recoveries-tab .table-wrapper,
 #script-level-spends-tab .table-wrapper {
   margin-top: var(--space-4);
+}
+
+.recoveries-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+}
+
+.recoveries-filters .filter-row {
+  margin: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 220px;
+}
+
+#recoveries-table tbody td:nth-child(n + 2) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 #script-level-spends-table thead tr:first-child th {

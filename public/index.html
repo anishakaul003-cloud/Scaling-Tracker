@@ -117,12 +117,24 @@
 
       <section id="show-wise-recoveries-tab" class="tab-panel" aria-labelledby="show-wise-recoveries-tab-title">
         <h1 id="show-wise-recoveries-tab-title">Show Wise Recoveries</h1>
-        <label for="recoveries-show-select">Show Name</label>
-        <select id="recoveries-show-select">
-          <option value="MVS">MVS</option>
-          <option value="FLBM">FLBM</option>
-          <option value="WBT">WBT</option>
-        </select>
+        <div class="recoveries-filters">
+          <div class="filter-row">
+            <label for="recoveries-refresh-date-select">Refresh Date</label>
+            <select id="recoveries-refresh-date-select"></select>
+          </div>
+          <div class="filter-row">
+            <label for="recoveries-show-select">Show</label>
+            <select id="recoveries-show-select"></select>
+          </div>
+          <div class="filter-row">
+            <label for="recoveries-sub-team-select">Sub-Team</label>
+            <select id="recoveries-sub-team-select"></select>
+          </div>
+          <div class="filter-row">
+            <label for="recoveries-language-select">Language</label>
+            <select id="recoveries-language-select"></select>
+          </div>
+        </div>
         <div class="table-wrapper">
           <table id="recoveries-table" aria-label="Show Wise Recoveries table"></table>
         </div>
@@ -211,6 +223,7 @@
     </script>
     <script src="./deepdive-data.js"></script>
     <script src="./script-level-spends-data.js"></script>
+    <script src="./recoveries-data.js"></script>
     <script src="./script.js"></script>
   </body>
 </html>
