@@ -515,14 +515,33 @@ function renderRawGridTableElement(table, rows, options = {}) {
       }
 
     if (isPlatformSpendsHeaderRow) {
-      const normalizedCell = normalizeString(cellValue);
-      if ((table.classList.contains("spends-table-2") || table.classList.contains("spends-table-3")) && i == 0 && normalizedCell == "") {
-        td.textContent = "";
-        td.rowSpan = 2;
-        td.classList.add("spends-merged-header-cell");
-        tr.appendChild(td);
-        continue;
+      if (table.classList.contains("spends-table-2") || table.classList.contains("spends-table-3")) {
+        const thEmptyLeft = document.createElement("th");
+        thEmptyLeft.textContent = "";
+        thEmptyLeft.classList.add("spends-merged-header-cell");
+        tr.appendChild(thEmptyLeft);
+
+        const thAndroid = document.createElement("th");
+        thAndroid.textContent = "Android";
+        thAndroid.colSpan = 4;
+        thAndroid.classList.add("spends-merged-header-cell");
+        tr.appendChild(thAndroid);
+
+        const thIos = document.createElement("th");
+        thIos.textContent = "iOS";
+        thIos.colSpan = 4;
+        thIos.classList.add("spends-merged-header-cell");
+        tr.appendChild(thIos);
+
+        const thEmptyRight = document.createElement("th");
+        thEmptyRight.textContent = "";
+        thEmptyRight.classList.add("spends-merged-header-cell");
+        tr.appendChild(thEmptyRight);
+
+        tbody.appendChild(tr);
+        return;
       }
+      const normalizedCell = normalizeString(cellValue);
       if (normalizedCell === "android" && normalizeString(getDisplayCellValue(i + 1)) === "") {
         td.colSpan = 4;
         td.classList.add("spends-merged-header-cell");
@@ -531,12 +550,6 @@ function renderRawGridTableElement(table, rows, options = {}) {
         td.colSpan = 4;
         td.classList.add("spends-merged-header-cell");
         i += 3;
-      } else if ((table.classList.contains("spends-table-2") || table.classList.contains("spends-table-3")) && i == rowEffectiveLength - 1 && normalizedCell == "") {
-        td.textContent = "";
-        td.rowSpan = 2;
-        td.classList.add("spends-merged-header-cell");
-        tr.appendChild(td);
-        continue;
       }
     }
 

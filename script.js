@@ -515,14 +515,33 @@ function renderRawGridTableElement(table, rows, options = {}) {
       }
 
     if (isPlatformSpendsHeaderRow) {
-      const normalizedCell = normalizeString(cellValue);
-      if ((table.classList.contains("spends-table-2") || table.classList.contains("spends-table-3")) && i == 0 && normalizedCell == "") {
-        td.textContent = "";
-        td.rowSpan = 2;
-        td.classList.add("spends-merged-header-cell");
-        tr.appendChild(td);
-        continue;
+      if (table.classList.contains("spends-table-2") || table.classList.contains("spends-table-3")) {
+        const thEmptyLeft = document.createElement("th");
+        thEmptyLeft.textContent = "";
+        thEmptyLeft.classList.add("spends-merged-header-cell");
+        tr.appendChild(thEmptyLeft);
+
+        const thAndroid = document.createElement("th");
+        thAndroid.textContent = "Android";
+        thAndroid.colSpan = 4;
+        thAndroid.classList.add("spends-merged-header-cell");
+        tr.appendChild(thAndroid);
+
+        const thIos = document.createElement("th");
+        thIos.textContent = "iOS";
+        thIos.colSpan = 4;
+        thIos.classList.add("spends-merged-header-cell");
+        tr.appendChild(thIos);
+
+        const thEmptyRight = document.createElement("th");
+        thEmptyRight.textContent = "";
+        thEmptyRight.classList.add("spends-merged-header-cell");
+        tr.appendChild(thEmptyRight);
+
+        tbody.appendChild(tr);
+        return;
       }
+      const normalizedCell = normalizeString(cellValue);
       if (normalizedCell === "android" && normalizeString(getDisplayCellValue(i + 1)) === "") {
         td.colSpan = 4;
         td.classList.add("spends-merged-header-cell");
@@ -531,12 +550,6 @@ function renderRawGridTableElement(table, rows, options = {}) {
         td.colSpan = 4;
         td.classList.add("spends-merged-header-cell");
         i += 3;
-      } else if ((table.classList.contains("spends-table-2") || table.classList.contains("spends-table-3")) && i == rowEffectiveLength - 1 && normalizedCell == "") {
-        td.textContent = "";
-        td.rowSpan = 2;
-        td.classList.add("spends-merged-header-cell");
-        tr.appendChild(td);
-        continue;
       }
     }
 
@@ -877,17 +890,6 @@ function renderSpendsPlanTables(containerId, sections, options = {}) {
   });
 }
 
-function buildRecoveriesRowsMap(recoveriesCsvTextByKey) {
-  const rowsByShow = {};
-
-  Object.entries(recoveriesCsvTextByKey).forEach(([showKey, csvText]) => {
-    const parsedRows = parseCsv(csvText);
-    rowsByShow[showKey] = parsedRows.slice(8, 24);
-  });
-
-  return rowsByShow;
-}
-
 function buildCsvRecords(csvText) {
   const rows = parseCsv(csvText);
   if (rows.length < 2) {
@@ -901,42 +903,6 @@ function buildCsvRecords(csvText) {
     });
     return record;
   });
-}
-
-function parseFormulaMetricDefinitions(formulaCsvText) {
-  const rows = parseCsv(formulaCsvText);
-  const baseSumRanges = new Set();
-  const costSumRanges = new Set();
-  const derived = new Set();
-
-  rows.forEach((row) => {
-    const formula = row[1] || "";
-    if (!formula) {
-      return;
-    }
-    const baseMatches = formula.match(/Base_Data!\$([A-Z]+):\$([A-Z]+)/g) || [];
-    baseMatches.forEach((match) => {
-      const column = match.replace("Base_Data!$", "").replace(/:\$[A-Z]+/, "");
-      baseSumRanges.add(column);
-    });
-    const costMatches = formula.match(/Cost_Data!\$([A-Z]+):\$([A-Z]+)/g) || [];
-    costMatches.forEach((match) => {
-      const column = match.replace("Cost_Data!$", "").replace(/:\$[A-Z]+/, "");
-      costSumRanges.add(column);
-    });
-    if (formula.includes("/")) {
-      derived.add("ratio_metrics");
-    }
-    if (formula.includes("IFERROR")) {
-      derived.add("error_safe_metrics");
-    }
-  });
-
-  return {
-    baseSumRanges: Array.from(baseSumRanges),
-    costSumRanges: Array.from(costSumRanges),
-    derivedMetrics: Array.from(derived)
-  };
 }
 
 function colNumberToLetters(colNumber) {
@@ -1063,186 +1029,475 @@ function buildRecoveriesMetricEngine(baseRows, costRows) {
     new Set(baseRows.map((row) => row.first_listening_show_language_v1).filter((value) => (value || "").trim() !== ""))
   ).sort((a, b) => a.localeCompare(b));
 
-  const isTikTokSource = (value) => normalizeString(value).replace(/\s+/g, "").includes("tiktok");
+  const normalizeMediaSource = (value) => normalizeString(value).replace(/\s+/g, "");
+
   const segments = [
-    { label: "All (w/ Testing)", base: () => true, cost: () => true },
+    { key: "all", label: "All (w/ Testing)" },
+    { key: "growth", label: "Growth", campaignType: "Scaling" },
+    { key: "android", label: "Android", campaignType: "Scaling", platform: "android" },
     {
-      label: "Growth",
-      base: (row) => ["scaling", "testing"].includes(normalizeString(row.campaign_type)),
-      cost: (row) => ["scaling", "testing"].includes(normalizeString(row.campaign_type))
+      key: "android_facebook",
+      label: "Facebook",
+      indentLevel: 1,
+      campaignType: "Scaling",
+      platform: "android",
+      mediaSource: "facebook"
     },
     {
-      label: "Android",
-      base: (row) => normalizeString(row.platform_v1) === "android",
-      cost: (row) => normalizeString(row.platform) === "android"
+      key: "android_google",
+      label: "Google",
+      indentLevel: 1,
+      campaignType: "Scaling",
+      platform: "android",
+      mediaSource: "google"
     },
     {
-      label: "    Facebook",
-      base: (row) => normalizeString(row.platform_v1) === "android" && normalizeString(row.media_source_v1) === "facebook",
-      cost: (row) => normalizeString(row.platform) === "android" && normalizeString(row.media_source) === "facebook"
+      key: "android_tiktok",
+      label: "Tik Tok",
+      indentLevel: 1,
+      campaignType: "Scaling",
+      platform: "android",
+      mediaSource: "tiktok"
     },
     {
-      label: "    Google",
-      base: (row) => normalizeString(row.platform_v1) === "android" && normalizeString(row.media_source_v1) === "google",
-      cost: (row) => normalizeString(row.platform) === "android" && normalizeString(row.media_source) === "google"
+      key: "android_organic",
+      label: "Organic",
+      indentLevel: 1,
+      campaignType: "Scaling",
+      platform: "android",
+      mediaSource: "organic"
+    },
+    { key: "ios", label: "iOS", campaignType: "Scaling", platform: "ios" },
+    {
+      key: "ios_facebook",
+      label: "Facebook",
+      indentLevel: 1,
+      campaignType: "Scaling",
+      platform: "ios",
+      mediaSource: "facebook"
     },
     {
-      label: "    TikTok",
-      base: (row) => normalizeString(row.platform_v1) === "android" && isTikTokSource(row.media_source_v1),
-      cost: (row) => normalizeString(row.platform) === "android" && isTikTokSource(row.media_source)
+      key: "ios_google",
+      label: "Google",
+      indentLevel: 1,
+      campaignType: "Scaling",
+      platform: "ios",
+      mediaSource: "google"
     },
     {
-      label: "    Organic",
-      base: (row) => normalizeString(row.platform_v1) === "android" && normalizeString(row.media_source_v1) === "organic",
-      cost: (row) => normalizeString(row.platform) === "android" && normalizeString(row.media_source) === "organic"
-    },
-    {
-      label: "iOS",
-      base: (row) => normalizeString(row.platform_v1) === "ios",
-      cost: (row) => normalizeString(row.platform) === "ios"
-    },
-    {
-      label: "    Facebook",
-      base: (row) => normalizeString(row.platform_v1) === "ios" && normalizeString(row.media_source_v1) === "facebook",
-      cost: (row) => normalizeString(row.platform) === "ios" && normalizeString(row.media_source) === "facebook"
-    },
-    {
-      label: "    Google",
-      base: (row) => normalizeString(row.platform_v1) === "ios" && normalizeString(row.media_source_v1) === "google",
-      cost: (row) => normalizeString(row.platform) === "ios" && normalizeString(row.media_source) === "google"
-    },
-    {
-      label: "    TikTok",
-      base: (row) => normalizeString(row.platform_v1) === "ios" && isTikTokSource(row.media_source_v1),
-      cost: (row) => normalizeString(row.platform) === "ios" && isTikTokSource(row.media_source)
+      key: "ios_tiktok",
+      label: "Tik Tok",
+      indentLevel: 1,
+      campaignType: "Scaling",
+      platform: "ios",
+      mediaSource: "tiktok"
     }
   ];
+
+  function filterBase(rows, filters, segment) {
+    const refreshIso = filters.refreshDate;
+    return rows.filter((row) => {
+      if (row.refresh_date !== refreshIso) return false;
+      if (normalizeString(row.first_listening_show_title_v1) !== normalizeString(filters.show)) return false;
+      if (isExcludedSubTeam(row.sub_team, filters.subTeam)) return false;
+      if (isExcludedLanguage(row.first_listening_show_language_v1, filters.language)) return false;
+      if (segment.campaignType && normalizeString(row.campaign_type) !== normalizeString(segment.campaignType)) return false;
+      if (segment.platform && normalizeString(row.platform_v1) !== normalizeString(segment.platform)) return false;
+      if (segment.mediaSource && normalizeMediaSource(row.media_source_v1) !== normalizeMediaSource(segment.mediaSource)) return false;
+      return true;
+    });
+  }
+
+  function filterCost(rows, filters, segment) {
+    const refreshIso = filters.refreshDate;
+    return rows.filter((row) => {
+      if (row.refresh_date !== refreshIso) return false;
+      if (normalizeString(row.ad_show_title_final) !== normalizeString(filters.show)) return false;
+      if (isExcludedSubTeam(row.sub_team, filters.subTeam)) return false;
+      if (isExcludedLanguage(row.ad_show_language_final, filters.language)) return false;
+      if (segment.campaignType && normalizeString(row.campaign_type) !== normalizeString(segment.campaignType)) return false;
+      if (segment.platform && normalizeString(row.platform) !== normalizeString(segment.platform)) return false;
+      if (segment.mediaSource && normalizeMediaSource(row.media_source) !== normalizeMediaSource(segment.mediaSource)) return false;
+      return true;
+    });
+  }
+
+  function sumBase(rows, fieldName, startDate, endDate, dayFlag = null) {
+    return rows.reduce((sum, row) => {
+      const dateValue = parseDateField(row.install_date_v1);
+      if (!inRange(dateValue, startDate, endDate)) return sum;
+      if (dayFlag && normalizeString(row.day_flag) !== normalizeString(dayFlag)) return sum;
+      return sum + (parseScaleNumber(row[fieldName]) || 0);
+    }, 0);
+  }
+
+  function sumCost(rows, startDate, endDate) {
+    return rows.reduce((sum, row) => {
+      const dateValue = parseDateField(row.date);
+      if (!inRange(dateValue, startDate, endDate)) return sum;
+      return sum + (parseScaleNumber(row.total_cost_dollars) || 0);
+    }, 0);
+  }
+
+  function sumCostAtDate(rows, targetDate) {
+    return rows.reduce((sum, row) => {
+      const dateValue = parseDateField(row.date);
+      if (!dateValue || dateValue.getTime() !== targetDate.getTime()) return sum;
+      return sum + (parseScaleNumber(row.total_cost_dollars) || 0);
+    }, 0);
+  }
+
+  function sumBaseAtDate(rows, fieldName, targetDate, dayFlag = null) {
+    return rows.reduce((sum, row) => {
+      const dateValue = parseDateField(row.install_date_v1);
+      if (!dateValue || dateValue.getTime() !== targetDate.getTime()) return sum;
+      if (dayFlag && normalizeString(row.day_flag) !== normalizeString(dayFlag)) return sum;
+      return sum + (parseScaleNumber(row[fieldName]) || 0);
+    }, 0);
+  }
+
+  function computePayback(m9Value, costValue) {
+    const ratio = costValue > 0 ? m9Value / costValue : 0;
+    if (!Number.isFinite(ratio) || ratio <= 0) return 6;
+    const val = Math.log10(1.5 / ratio) * 39.5161 + 9;
+    return Math.max(val, 6);
+  }
 
   function computeRows(filters) {
     const refreshDate = parseDateField(filters.refreshDate);
     if (!refreshDate) {
-      return [];
+      return null;
     }
-    const d3Latest = addDays(refreshDate, -4);
-    const d7Latest = addDays(refreshDate, -8);
-    const d15Latest = addDays(refreshDate, -15);
-    const windows = [
-      { flag: "D3", start: addDays(d3Latest, -6), end: d3Latest },
-      { flag: "D7", start: addDays(d7Latest, -6), end: d7Latest },
-      { flag: "D15", start: addDays(d15Latest, -6), end: d15Latest }
-    ];
+
+    const d1 = refreshDate;
+    const d2 = addDays(d1, -4);
+    const d3 = addDays(d1, -8);
+    const d4 = addDays(d1, -15);
+
+    const z10 = d4;
+    const o10 = addDays(z10, -7);
+    const m10 = addDays(o10, -6);
+
+    const x10 = addDays(z10, -6);
+
+    const af10 = d3;
+    const ad10 = addDays(af10, -6);
+
+    const aj10 = d2;
+    const ai10 = addDays(aj10, -6);
+
+    const headerDates = {
+      m10,
+      o10,
+      x10,
+      z10,
+      ad10,
+      af10,
+      ai10,
+      aj10
+    };
 
     const rows = segments.map((segment) => {
-      const segmentBaseRows = filterRecoveriesBaseRows(baseRows, filters, segment.base);
-      const segmentCostRows = filterRecoveriesCostRows(costRows, filters, segment.cost);
-      const metricByFlag = {};
+      const baseSegmentRows = filterBase(baseRows, filters, segment);
+      const costSegmentRows = filterCost(costRows, filters, segment);
 
-      windows.forEach((window) => {
-        const baseInWindow = segmentBaseRows.filter((row) => {
-          const dateValue = parseDateField(row.install_date_v1);
-          return inRange(dateValue, window.start, window.end) && normalizeString(row.day_flag) === normalizeString(window.flag);
-        });
-        const costInWindow = segmentCostRows.filter((row) => {
-          const dateValue = parseDateField(row.date);
-          return inRange(dateValue, window.start, window.end);
-        });
-        const sameShowRevenue = sumNumber(baseInWindow, "same_show_revenue");
-        const totalCost = sumNumber(costInWindow, "total_cost_dollars");
-        metricByFlag[window.flag] = totalCost > 0 ? (sameShowRevenue / totalCost) * 100 : 0;
-      });
+      const block1Cost = sumCost(costSegmentRows, m10, o10);
+      const block1D3 = block1Cost > 0 ? sumBase(baseSegmentRows, "revenue", m10, o10, "D3") / block1Cost : 0;
+      const block1D7 = block1Cost > 0 ? sumBase(baseSegmentRows, "revenue", m10, o10, "D7") / block1Cost : 0;
+      const block1D15 = block1Cost > 0 ? sumBase(baseSegmentRows, "revenue", m10, o10, "D15") / block1Cost : 0;
+      const block1Installs = sumBase(baseSegmentRows, "installs", m10, o10, "D15");
+      const block1Cpi = block1Installs > 0 ? block1Cost / block1Installs : 0;
+      const block1M9D7 = sumBase(baseSegmentRows, "M9_revenue_d7_projected", m10, o10, "D7");
+      const block1M9D15Nssw = sumBase(baseSegmentRows, "M9_revenue_d15_projected_cpnsw", m10, o10, "D15");
+      const block1M9D15Fsw = sumBase(baseSegmentRows, "M9_revenue_d15_projected_cpfsw", m10, o10, "D15");
+      const block1PaybackD7 = computePayback(block1M9D7, block1Cost);
+      const block1PaybackD15Nssw = computePayback(block1M9D15Nssw, block1Cost);
+      const block1PaybackD15Fsw = computePayback(block1M9D15Fsw, block1Cost);
 
-      const costCurrentWindow = segmentCostRows.filter((row) => {
-        const dateValue = parseDateField(row.date);
-        return inRange(dateValue, windows[0].start, windows[0].end);
-      });
-      const baseCurrentWindow = segmentBaseRows.filter((row) => {
-        const dateValue = parseDateField(row.install_date_v1);
-        return inRange(dateValue, windows[0].start, windows[0].end);
-      });
+      const block2Cost = sumCost(costSegmentRows, x10, z10);
+      const block2D3 = block2Cost > 0 ? sumBase(baseSegmentRows, "revenue", x10, z10, "D3") / block2Cost : 0;
+      const block2D7 = block2Cost > 0 ? sumBase(baseSegmentRows, "revenue", x10, z10, "D7") / block2Cost : 0;
+      const block2D15 = block2Cost > 0 ? sumBase(baseSegmentRows, "revenue", x10, z10, "D15") / block2Cost : 0;
+      const block2Installs = sumBase(baseSegmentRows, "installs", x10, z10, "D15");
+      const block2Cpi = block2Installs > 0 ? block2Cost / block2Installs : 0;
+      const block2M9D7 = sumBase(baseSegmentRows, "M9_revenue_d7_projected", x10, z10, "D7");
+      const block2M9D15Nssw = sumBase(baseSegmentRows, "M9_revenue_d15_projected_cpnsw", x10, z10, "D15");
+      const block2M9D15Fsw = sumBase(baseSegmentRows, "M9_revenue_d15_projected_cpfsw", x10, z10, "D15");
+      const block2PaybackD7 = computePayback(block2M9D7, block2Cost);
+      const block2PaybackD15Nssw = computePayback(block2M9D15Nssw, block2Cost);
+      const block2PaybackD15 = computePayback(block2M9D15Fsw, block2Cost);
 
-      const totalCost = sumNumber(costCurrentWindow, "total_cost_dollars");
-      const installs = sumNumber(baseCurrentWindow, "installs");
-      const m9D7 = sumNumber(baseCurrentWindow, "M9_revenue_d7_projected");
-      const m9D15CpNssw = sumNumber(baseCurrentWindow, "M9_revenue_d15_projected_cpnsw");
-      const m9D15CpFsw = sumNumber(baseCurrentWindow, "M9_revenue_d15_projected_cpfsw");
+      const block3Cost = sumCost(costSegmentRows, ad10, af10);
+      const block3D3 = block3Cost > 0 ? sumBase(baseSegmentRows, "revenue", ad10, af10, "D3") / block3Cost : 0;
+      const block3D7 = block3Cost > 0 ? sumBase(baseSegmentRows, "revenue", ad10, af10, "D7") / block3Cost : 0;
+      const block3Installs = sumBase(baseSegmentRows, "installs", ad10, af10, "D0");
+      const block3Cpi = block3Installs > 0 ? block3Cost / block3Installs : 0;
+      const block3M9D7 = sumBase(baseSegmentRows, "M9_revenue_d7_projected", ad10, af10, "D7");
+      const block3PaybackD7 = computePayback(block3M9D7, block3Cost);
+
+      const block4Cost = sumCost(costSegmentRows, ai10, aj10);
+      const block4D3 = block4Cost > 0 ? sumBase(baseSegmentRows, "revenue", ai10, aj10, "D3") / block4Cost : 0;
+      const block4Installs = sumBase(baseSegmentRows, "installs", ai10, aj10, "D0");
+      const block4Cpi = block4Installs > 0 ? block4Cost / block4Installs : 0;
+
+      const d2Date = addDays(d1, -2);
+      const currentCost = sumCostAtDate(costSegmentRows, d2Date);
+      const currentInstalls = sumBaseAtDate(baseSegmentRows, "installs", d2Date, "D0");
+      const currentCpi = currentInstalls > 0 ? currentCost / currentInstalls : 0;
+
       return {
         segment: segment.label,
-        d3: metricByFlag.D3 || 0,
-        d7: metricByFlag.D7 || 0,
-        d15: metricByFlag.D15 || 0,
-        cost: totalCost,
-        cpi: installs > 0 ? totalCost / installs : 0,
-        m9d7: m9D7,
-        m9d15cpnssw: m9D15CpNssw,
-        m9d15cpfsw: m9D15CpFsw,
-        paybackD7: totalCost > 0 ? (m9D7 / totalCost) * 100 : 0,
-        paybackD15cpnssw: totalCost > 0 ? (m9D15CpNssw / totalCost) * 100 : 0
+        indentLevel: segment.indentLevel || 0,
+        block1: {
+          d3: block1D3,
+          d7: block1D7,
+          d15: block1D15,
+          cost: block1Cost,
+          cpi: block1Cpi,
+          m9d7: block1M9D7,
+          m9d15nssw: block1M9D15Nssw,
+          m9d15fsw: block1M9D15Fsw,
+          paybackD7: block1PaybackD7,
+          paybackD15nssw: block1PaybackD15Nssw,
+          paybackD15fsw: block1PaybackD15Fsw
+        },
+        block2: {
+          d3: block2D3,
+          d7: block2D7,
+          d15: block2D15,
+          cost: block2Cost,
+          cpi: block2Cpi,
+          m9d7: block2M9D7,
+          m9d15nssw: block2M9D15Nssw,
+          m9d15: block2M9D15Fsw,
+          paybackD7: block2PaybackD7,
+          paybackD15nssw: block2PaybackD15Nssw,
+          paybackD15: block2PaybackD15
+        },
+        block3: {
+          d3: block3D3,
+          d7: block3D7,
+          cost: block3Cost,
+          cpi: block3Cpi,
+          m9d7: block3M9D7,
+          paybackD7: block3PaybackD7
+        },
+        block4: {
+          d3: block4D3,
+          cost: block4Cost,
+          cpi: block4Cpi,
+          potentialPayback: ""
+        },
+        current: {
+          drr: currentCost,
+          cpi: currentCpi
+        }
       };
     });
-    return {
-      rows,
-      dates: {
-        d3Latest: toIsoDateString(d3Latest),
-        d7Latest: toIsoDateString(d7Latest),
-        d15Latest: toIsoDateString(d15Latest),
-        m10: toIsoDateString(windows[0].start),
-        o10: toIsoDateString(windows[0].end)
-      }
-    };
+
+    return { rows, dates: { d1, d2, d3, d4, ...headerDates }, showName: filters.show };
   }
 
   return { refreshDates, shows, subTeams, languages, computeRows };
 }
 
-function renderShowWiseRecoveriesEngineTable(tableId, rows) {
+function renderShowWiseRecoveriesEngineTable(tableId, computed) {
   const table = document.getElementById(tableId);
   table.textContent = "";
+  if (!computed) return;
 
-  const headers = [
-    "Segment",
+  const { rows, dates, showName } = computed;
+  const formatPctRatio = (value) => (Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : "");
+  const formatNumber = (value, decimals = 0) => {
+    if (!Number.isFinite(value)) return "";
+    return value.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  };
+
+  const formatDateLabel = (dateObj) =>
+    dateObj instanceof Date
+      ? dateObj.toLocaleDateString("en-GB", { day: "numeric", month: "short" }).replace(" ", "-")
+      : "";
+
+  const totalColumns =
+    1 + // Segment
+    11 + // Block1
+    11 + // Block2
+    6 + // Block3
+    4 + // Block4
+    4; // Current metrics
+
+  const thead = document.createElement("thead");
+
+  const headerRow1 = document.createElement("tr");
+
+  for (let i = 0; i < totalColumns; i += 1) {
+    const th1 = document.createElement("th");
+    th1.textContent = "";
+
+    if (i === 0) {
+      th1.textContent = showName || "";
+      th1.classList.add("recoveries-show-title");
+    }
+
+    // Block 1 (columns 1-11)
+    if (i === 1) th1.textContent = "Week of >";
+    if (i === 1 + 8) th1.textContent = formatDateLabel(dates.m10);
+    if (i === 1 + 10) th1.textContent = formatDateLabel(dates.o10);
+
+    // Block 2 (columns 12-22)
+    if (i === 12) th1.textContent = "Week of >";
+    if (i === 12 + 8) th1.textContent = formatDateLabel(dates.x10);
+    if (i === 12 + 10) th1.textContent = formatDateLabel(dates.z10);
+
+    // Block 3 (columns 23-28)
+    if (i === 23) th1.textContent = "Week of >";
+    if (i === 23 + 3) th1.textContent = formatDateLabel(dates.ad10);
+    if (i === 23 + 5) th1.textContent = formatDateLabel(dates.af10);
+
+    // Block 4 (columns 29-32)
+    if (i === 29) th1.textContent = "Week of >";
+    if (i === 29 + 2) th1.textContent = formatDateLabel(dates.ai10);
+    if (i === 29 + 3) th1.textContent = formatDateLabel(dates.aj10);
+
+    // Current metrics (columns 33-36)
+    if (i === 33) th1.textContent = "Current DRR (D-2)";
+    if (i === 34) th1.textContent = "Current CPI (D-2)";
+    if (i === 35) th1.textContent = "Spends% (D-2)";
+    if (i === 36) th1.textContent = "Spends% (D-2) Platform Level";
+
+    headerRow1.appendChild(th1);
+  }
+
+  const blockHeaders = [
+    "",
     "D3",
     "D7",
     "D15",
     "Cost",
     "CPI",
-    "M9 Revenue (D7)",
-    "M9 (proj) Rev (D15 NSSW)",
-    "M9 (proj) Rev (D15 FSW)",
+    "M9 (proj.) Revenue (D7)",
+    "M9 (proj.) Revenue (D15 NSSW)",
+    "M9 (proj.) Revenue (D15 FSW)",
     "Payback D7",
-    "Payback D15 CPNSSW"
+    "Payback D15 CPNSSW",
+    "Payback D15 CPFSW",
+    "D3",
+    "D7",
+    "D15",
+    "Cost",
+    "CPI",
+    "M9 (proj.) Revenue (D7)",
+    "M9 (proj.) Revenue (D15 NSSW)",
+    "M9 (proj.) Revenue (D15)",
+    "Payback D7",
+    "Payback D15 CPNSSW",
+    "Payback D15",
+    "D3",
+    "D7",
+    "Cost",
+    "CPI",
+    "M9 Revenue (D7)",
+    "Payback D7",
+    "D3",
+    "Cost",
+    "CPI",
+    "Potential Payback",
+    "",
+    "",
+    "",
+    ""
   ];
 
-  const thead = document.createElement("thead");
-  const headerRow = document.createElement("tr");
-  headers.forEach((header) => {
+  const headerRow3 = document.createElement("tr");
+  blockHeaders.forEach((header, index) => {
     const th = document.createElement("th");
     th.textContent = header;
-    headerRow.appendChild(th);
+    if (index === 0) th.classList.add("metric-primary");
+    headerRow3.appendChild(th);
   });
-  thead.appendChild(headerRow);
+
+  thead.appendChild(headerRow1);
+  thead.appendChild(headerRow3);
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
+  const growthRow = rows.find((entry) => entry.segment.trim() === "Growth");
+  const growthTotal = growthRow?.current?.drr || 0;
+  let activePlatform = "";
+  let activePlatformTotal = 0;
+
   rows.forEach((row) => {
     const tr = document.createElement("tr");
+    const segmentName = row.segment.trim();
+    if (segmentName === "Android" || segmentName === "iOS") {
+      activePlatform = segmentName;
+      activePlatformTotal = row.current.drr || 0;
+    }
+
+    const currentSpendPct =
+      segmentName === "All (w/ Testing)" || !growthTotal
+        ? ""
+        : row.current.drr / growthTotal;
+
+    let platformLevelValue = "";
+    if (segmentName === "Android" || segmentName === "iOS") {
+      platformLevelValue = segmentName;
+    } else if (row.indentLevel && activePlatformTotal) {
+      platformLevelValue = row.current.drr / activePlatformTotal;
+    }
+
     const values = [
       row.segment,
-      formatPct(row.d3),
-      formatPct(row.d7),
-      formatPct(row.d15),
-      formatCurrency(row.cost),
-      formatCurrency(row.cpi),
-      formatCurrency(row.m9d7),
-      formatCurrency(row.m9d15cpnssw),
-      formatCurrency(row.m9d15cpfsw),
-      formatPct(row.paybackD7),
-      formatPct(row.paybackD15cpnssw)
+      formatPctRatio(row.block1.d3),
+      formatPctRatio(row.block1.d7),
+      formatPctRatio(row.block1.d15),
+      formatNumber(row.block1.cost),
+      formatNumber(row.block1.cpi, 1),
+      formatNumber(row.block1.m9d7),
+      formatNumber(row.block1.m9d15nssw),
+      formatNumber(row.block1.m9d15fsw),
+      formatNumber(row.block1.paybackD7, 1),
+      formatNumber(row.block1.paybackD15nssw, 1),
+      formatNumber(row.block1.paybackD15fsw, 1),
+      formatPctRatio(row.block2.d3),
+      formatPctRatio(row.block2.d7),
+      formatPctRatio(row.block2.d15),
+      formatNumber(row.block2.cost),
+      formatNumber(row.block2.cpi, 1),
+      formatNumber(row.block2.m9d7),
+      formatNumber(row.block2.m9d15nssw),
+      formatNumber(row.block2.m9d15),
+      formatNumber(row.block2.paybackD7, 1),
+      formatNumber(row.block2.paybackD15nssw, 1),
+      formatNumber(row.block2.paybackD15, 1),
+      formatPctRatio(row.block3.d3),
+      formatPctRatio(row.block3.d7),
+      formatNumber(row.block3.cost),
+      formatNumber(row.block3.cpi, 1),
+      formatNumber(row.block3.m9d7),
+      formatNumber(row.block3.paybackD7, 1),
+      formatPctRatio(row.block4.d3),
+      formatNumber(row.block4.cost),
+      formatNumber(row.block4.cpi, 1),
+      row.block4.potentialPayback,
+      formatNumber(row.current.drr),
+      formatNumber(row.current.cpi, 1),
+      currentSpendPct !== "" ? formatPctRatio(currentSpendPct) : "",
+      typeof platformLevelValue === "string"
+        ? platformLevelValue
+        : platformLevelValue !== ""
+        ? formatPctRatio(platformLevelValue)
+        : ""
     ];
+
     values.forEach((value, index) => {
       const td = document.createElement("td");
       td.textContent = value;
       if (index === 0) {
         td.classList.add("metric-primary");
+        if (row.indentLevel) {
+          td.classList.add("recoveries-subsegment");
+        }
       }
       tr.appendChild(td);
     });
@@ -1939,17 +2194,12 @@ function init() {
   if (typeof SHOW_WISE_COST_DATA_CSV_TEXT !== "string") {
     throw new Error("SHOW_WISE_COST_DATA_CSV_TEXT is not available in recoveries-data.js");
   }
-  if (typeof SHOW_WISE_FORMULA_MAP_CSV_TEXT !== "string") {
-    throw new Error("SHOW_WISE_FORMULA_MAP_CSV_TEXT is not available in recoveries-data.js");
-  }
   if (typeof SHOW_WISE_LAYOUT_CSV_TEXT !== "string") {
     throw new Error("SHOW_WISE_LAYOUT_CSV_TEXT is not available in recoveries-data.js");
   }
 
   const recoveriesBaseRows = buildCsvRecords(SHOW_WISE_BASE_DATA_CSV_TEXT);
   const recoveriesCostRows = buildCsvRecords(SHOW_WISE_COST_DATA_CSV_TEXT);
-  const recoveriesFormulaDefinitions = parseFormulaMetricDefinitions(SHOW_WISE_FORMULA_MAP_CSV_TEXT);
-  console.debug("[ShowWiseRecoveries] Formula-derived metric definitions", recoveriesFormulaDefinitions);
   const recoveriesLayoutGrid = buildLayoutGrid(SHOW_WISE_LAYOUT_CSV_TEXT, 24, 33);
   const recoveriesEngine = buildRecoveriesMetricEngine(recoveriesBaseRows, recoveriesCostRows);
 
@@ -1957,6 +2207,8 @@ function init() {
   const recoveriesShowSelect = document.getElementById("recoveries-show-select");
   const recoveriesSubTeamSelect = document.getElementById("recoveries-sub-team-select");
   const recoveriesLanguageSelect = document.getElementById("recoveries-language-select");
+  const recoveriesToggleColumns = document.getElementById("recoveries-toggle-columns");
+  const recoveriesTable = document.getElementById("recoveries-table");
 
   recoveriesEngine.refreshDates.forEach((refreshDate) => {
     const option = document.createElement("option");
@@ -2004,6 +2256,17 @@ function init() {
   });
   recoveriesLanguageSelect.value = "__exclude_spanish__";
 
+  if (recoveriesTable) {
+    recoveriesTable.classList.add("hide-recoveries-columns");
+  }
+  if (recoveriesToggleColumns && recoveriesTable) {
+    recoveriesToggleColumns.addEventListener("click", () => {
+      const isHidden = recoveriesTable.classList.toggle("hide-recoveries-columns");
+      recoveriesToggleColumns.setAttribute("aria-pressed", String(!isHidden));
+      recoveriesToggleColumns.textContent = isHidden ? "Show hidden columns" : "Hide extra columns";
+    });
+  }
+
   const latestRefreshYear = parseIsoDate(recoveriesEngine.refreshDates[0])?.getFullYear() || new Date().getFullYear();
   const layoutRefreshIso = parseSheetStyleDateToIso(recoveriesLayoutGrid.cellMap.get("D1"), latestRefreshYear);
   if (layoutRefreshIso && recoveriesEngine.refreshDates.includes(layoutRefreshIso)) {
@@ -2030,14 +2293,14 @@ function init() {
       language: recoveriesLanguageSelect.value || "__exclude_spanish__"
     };
     const computed = recoveriesEngine.computeRows(filters);
-    renderShowWiseRecoveriesEngineTable("recoveries-table", computed.rows);
-    const h12 = computed.rows[0]?.cost ?? 0;
-    const d12 = computed.rows[0]?.segment ?? "";
+    renderShowWiseRecoveriesEngineTable("recoveries-table", computed);
+    const h12 = computed?.rows?.[0]?.block1?.cost ?? 0;
+    const d12 = computed?.rows?.[0]?.segment ?? "";
     const baseFilteredCount = filterRecoveriesBaseRows(recoveriesBaseRows, filters, () => true).length;
     const costFilteredCount = filterRecoveriesCostRows(recoveriesCostRows, filters, () => true).length;
     console.debug("[ShowWiseRecoveries][Validation] H12=", h12);
-    console.debug("[ShowWiseRecoveries][Validation] M10=", computed.dates.m10);
-    console.debug("[ShowWiseRecoveries][Validation] O10=", computed.dates.o10);
+    console.debug("[ShowWiseRecoveries][Validation] M10=", computed?.dates?.m10);
+    console.debug("[ShowWiseRecoveries][Validation] O10=", computed?.dates?.o10);
     console.debug("[ShowWiseRecoveries][Validation] D12=", d12);
     console.debug("[ShowWiseRecoveries][Validation] FilteredRowCounts base=", baseFilteredCount, "cost=", costFilteredCount);
   }

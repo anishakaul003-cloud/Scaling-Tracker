@@ -256,14 +256,14 @@ h2 {
   width: 100%;
   max-width: none;
   color: #5d6d63;
-  font-size: 16px;
+  font-size: 18.24px;
   line-height: 1.6;
 }
 
 .retention-summary-list {
   margin: 0 0 var(--space-5) var(--space-5);
   color: #5d6d63;
-  font-size: 15px;
+  font-size: 18.24px;
   line-height: 1.55;
   padding-left: 10px;
 }
@@ -774,9 +774,65 @@ tbody tr:hover td {
   min-width: 220px;
 }
 
+.recoveries-controls {
+  margin-top: var(--space-3);
+}
+
+.recoveries-controls .toggle-button {
+  border: 1px solid rgba(120, 111, 75, 0.35);
+  background: #fbf6e8;
+  color: #364339;
+  border-radius: 12px;
+  padding: 8px 14px;
+  font-weight: 600;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.recoveries-controls .toggle-button:hover {
+  box-shadow: 0 6px 16px rgba(60, 52, 23, 0.12);
+  transform: translateY(-1px);
+}
+
+#recoveries-table .recoveries-show-title {
+  background: #121212;
+  color: #f5f2e9;
+  font-weight: 700;
+  text-align: center;
+}
+
+#recoveries-table .recoveries-subsegment {
+  padding-left: 24px;
+}
+
 #recoveries-table tbody td:nth-child(n + 2) {
-  text-align: right;
+  text-align: center;
   font-variant-numeric: tabular-nums;
+}
+
+#recoveries-table thead th:nth-child(n + 2),
+#recoveries-table tbody td:nth-child(n + 2) {
+  text-align: center;
+}
+
+#recoveries-table.hide-recoveries-columns th:nth-child(7),
+#recoveries-table.hide-recoveries-columns td:nth-child(7),
+#recoveries-table.hide-recoveries-columns th:nth-child(8),
+#recoveries-table.hide-recoveries-columns td:nth-child(8),
+#recoveries-table.hide-recoveries-columns th:nth-child(9),
+#recoveries-table.hide-recoveries-columns td:nth-child(9),
+#recoveries-table.hide-recoveries-columns th:nth-child(12),
+#recoveries-table.hide-recoveries-columns td:nth-child(12),
+#recoveries-table.hide-recoveries-columns th:nth-child(18),
+#recoveries-table.hide-recoveries-columns td:nth-child(18),
+#recoveries-table.hide-recoveries-columns th:nth-child(19),
+#recoveries-table.hide-recoveries-columns td:nth-child(19),
+#recoveries-table.hide-recoveries-columns th:nth-child(20),
+#recoveries-table.hide-recoveries-columns td:nth-child(20),
+#recoveries-table.hide-recoveries-columns th:nth-child(23),
+#recoveries-table.hide-recoveries-columns td:nth-child(23),
+#recoveries-table.hide-recoveries-columns th:nth-child(28),
+#recoveries-table.hide-recoveries-columns td:nth-child(28) {
+  display: none;
 }
 
 #script-level-spends-table thead tr:first-child th {
