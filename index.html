@@ -171,36 +171,70 @@
           <li>Campaign ID selection is optional.</li>
         </ul>
 
-        <div class="retention-filters">
-          <div class="filter-row filter-show-name">
-            <label for="retention-show-select">Show Name</label>
-            <select id="retention-show-select"></select>
-          </div>
-          <div class="filter-row">
-            <label for="retention-platform-select">Platform</label>
-            <select id="retention-platform-select"></select>
-          </div>
-          <div class="filter-row">
-            <label for="retention-media-source-select">Media Source</label>
-            <select id="retention-media-source-select"></select>
-          </div>
-          <div class="filter-row">
-            <label for="retention-adset-id-select">Adset ID</label>
-            <div class="searchable-combobox">
-              <input id="retention-adset-id-select" type="text" autocomplete="off" />
-              <div id="retention-adset-id-list" class="searchable-options" hidden></div>
+        <div class="retention-filter-card">
+          <div class="filter-column">
+            <div class="retention-filters">
+              <div class="filter-row filter-show-name">
+                <label for="retention-show-select">Show Name</label>
+                <select id="retention-show-select"></select>
+              </div>
+              <div class="filter-row">
+                <label for="retention-platform-select">Platform</label>
+                <select id="retention-platform-select"></select>
+              </div>
+              <div class="filter-row">
+                <label for="retention-media-source-select">Media Source</label>
+                <select id="retention-media-source-select"></select>
+              </div>
+              <div class="filter-row">
+                <label for="retention-adset-id-select">Adset ID</label>
+                <div class="searchable-combobox">
+                  <input id="retention-adset-id-select" type="text" autocomplete="off" />
+                  <div id="retention-adset-id-list" class="searchable-options" hidden></div>
+                </div>
+              </div>
+              <div class="filter-row">
+                <label for="retention-campaign-id-select">Campaign ID</label>
+                <div class="searchable-combobox">
+                  <input id="retention-campaign-id-select" type="text" autocomplete="off" placeholder="Any (Optional)" />
+                  <div id="retention-campaign-id-list" class="searchable-options" hidden></div>
+                </div>
+              </div>
+              <div class="filter-row filter-day-diff">
+                <label for="retention-day-diff-select">Day Diff</label>
+                <select id="retention-day-diff-select"></select>
+              </div>
+            </div>
+            <div class="retention-benchmark-toggle-row">
+              <button id="retention-benchmark-toggle" type="button" class="toggle-button" aria-pressed="false">
+                Show benchmarks
+              </button>
             </div>
           </div>
-          <div class="filter-row">
-            <label for="retention-campaign-id-select">Campaign ID</label>
-            <div class="searchable-combobox">
-              <input id="retention-campaign-id-select" type="text" autocomplete="off" placeholder="Any (Optional)" />
-              <div id="retention-campaign-id-list" class="searchable-options" hidden></div>
+          <div class="benchmark-column">
+            <div id="retention-benchmark-panel" class="benchmark-panel benchmark-panel--hidden">
+              <div class="benchmark-title">Retention Benchmark for M9 Paybacks</div>
+              <table class="benchmark-table" aria-label="Retention benchmark table">
+                <tbody>
+                  <tr>
+                    <td class="benchmark-label">CPI</td>
+                    <td class="benchmark-value">$19.49</td>
+                  </tr>
+                  <tr>
+                    <td class="benchmark-label">D7H10</td>
+                    <td class="benchmark-value">6.49%</td>
+                  </tr>
+                  <tr>
+                    <td class="benchmark-label">D15H20</td>
+                    <td class="benchmark-value">4.31%</td>
+                  </tr>
+                  <tr>
+                    <td class="benchmark-label">D30H40</td>
+                    <td class="benchmark-value">2.63%</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-          </div>
-          <div class="filter-row filter-day-diff">
-            <label for="retention-day-diff-select">Day Diff</label>
-            <select id="retention-day-diff-select"></select>
           </div>
         </div>
         <div id="retention-debug-panel" class="retention-debug-panel" aria-live="polite">

@@ -2457,6 +2457,24 @@ function init() {
   const adsetValues = uniqueSorted(rawDumpRows.map((row) => row.Adset_ID));
   const campaignValues = uniqueSorted(rawDumpRows.map((row) => row.Campaign_ID));
   const dayDiffValues = orderDayDiffValues(rawDumpRows.map((row) => row.day_diff));
+
+  const retentionBenchmarkToggle = document.getElementById('retention-benchmark-toggle');
+  const retentionBenchmarkPanel = document.getElementById('retention-benchmark-panel');
+  const setBenchmarkVisibility = (visible) => {
+    if (!retentionBenchmarkPanel || !retentionBenchmarkToggle) {
+      return;
+    }
+    retentionBenchmarkPanel.classList.toggle('benchmark-panel--hidden', !visible);
+    retentionBenchmarkToggle.setAttribute('aria-pressed', String(visible));
+    retentionBenchmarkToggle.textContent = visible ? 'Hide benchmarks' : 'Show benchmarks';
+  };
+  if (retentionBenchmarkToggle) {
+    retentionBenchmarkToggle.addEventListener('click', () => {
+      const panelVisible = retentionBenchmarkPanel && !retentionBenchmarkPanel.classList.contains('benchmark-panel--hidden');
+      setBenchmarkVisibility(!panelVisible);
+    });
+  }
+  setBenchmarkVisibility(false);
   const campaignValueSet = new Set(campaignValues.map((value) => normalizeString(value)));
 
   setSelectOptions(retentionShowSelect, showValues);

@@ -203,6 +203,81 @@ h2 {
   line-height: 1.6;
 }
 
+.filter-column .retention-filters {
+  margin: 0;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.retention-filter-card {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 200px);
+  gap: var(--space-6);
+  padding: var(--space-5) calc(var(--space-5) * 1.25);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: var(--space-5);
+}
+
+.retention-benchmark-toggle-row {
+  margin-top: var(--space-3);
+  margin-bottom: var(--space-1);
+  text-align: left;
+}
+
+.benchmark-column {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-left: var(--space-3);
+}
+
+.benchmark-panel {
+  width: 100%;
+  max-width: 220px;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: #fbf8ec;
+  box-shadow: var(--shadow-sm);
+}
+
+.benchmark-panel--hidden {
+  display: none;
+}
+
+.benchmark-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.benchmark-table td {
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  font-size: 15px;
+  text-align: center;
+}
+
+.benchmark-title {
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: var(--space-2);
+}
+}
+
+.retention-benchmark-toggle-row {
+  margin-top: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.benchmark-panel--hidden {
+  display: none;
+}
+
 #ios-deepdive-tab .deepdive-summary {
   margin-bottom: var(--space-5);
   font-size: 18.24px;
@@ -778,7 +853,7 @@ tbody tr:hover td {
   margin-top: var(--space-3);
 }
 
-.recoveries-controls .toggle-button {
+.toggle-button {
   border: 1px solid rgba(120, 111, 75, 0.35);
   background: #fbf6e8;
   color: #364339;
@@ -786,9 +861,10 @@ tbody tr:hover td {
   padding: 8px 14px;
   font-weight: 600;
   transition: box-shadow 0.2s ease, transform 0.2s ease;
+  font-size: 16px;
 }
 
-.recoveries-controls .toggle-button:hover {
+.toggle-button:hover {
   box-shadow: 0 6px 16px rgba(60, 52, 23, 0.12);
   transform: translateY(-1px);
 }
