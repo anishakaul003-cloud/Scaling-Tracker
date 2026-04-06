@@ -47,7 +47,15 @@ function parseCsv(text) {
 }
 
 function isCompletelyEmptyRow(row) {
-  return row.every((cell) => cell === "");
+  return row.every((cell) => String(cell ?? "").trim() === "");
+}
+
+function trimTrailingEmptyCells(row) {
+  let lastFilledIndex = row.length - 1;
+  while (lastFilledIndex >= 0 && String(row[lastFilledIndex] ?? "").trim() === "") {
+    lastFilledIndex -= 1;
+  }
+  return row.slice(0, lastFilledIndex + 1);
 }
 
 function getColumnCountFromHeader(headerRow) {
@@ -60,6 +68,38 @@ function getColumnCountFromHeader(headerRow) {
 
 function extractSectionRows(parsedRows, headerFirstCell) {
   const headerIndex = parsedRows.findIndex((row) => (row[0] || "").trim() === headerFirstCell);
+  if (headerIndex === -1) {
+    return [];
+  }
+
+  const headerRow = parsedRows[headerIndex];
+  const columnCount = getColumnCountFromHeader(headerRow);
+  const sectionRows = [headerRow.slice(0, columnCount)];
+
+  for (let i = headerIndex + 1; i < parsedRows.length; i += 1) {
+    const currentRow = parsedRows[i];
+    if (isCompletelyEmptyRow(currentRow)) {
+      break;
+    }
+    sectionRows.push(currentRow.slice(0, columnCount));
+  }
+
+  return sectionRows;
+}
+
+function extractSectionRowsByMarker(parsedRows, markerFirstCell, headerFirstCell) {
+  const markerIndex = parsedRows.findIndex((row) => (row[0] || "").trim() === markerFirstCell);
+  if (markerIndex === -1) {
+    return [];
+  }
+
+  let headerIndex = -1;
+  for (let i = markerIndex + 1; i < parsedRows.length; i += 1) {
+    if ((parsedRows[i]?.[0] || "").trim() === headerFirstCell) {
+      headerIndex = i;
+      break;
+    }
+  }
   if (headerIndex === -1) {
     return [];
   }
@@ -120,8 +160,77 @@ function renderTable(tableId, rows) {
   });
 
   table.appendChild(tbody);
-  if (tableId === "daily-table" || tableId === "weekly-table") {
+  if (tableId === "daily-table" || tableId === "weekly-table" || tableId === "cpi-metrics-table") {
     applyIosPerformanceConditionalFormatting(table, rows);
+  }
+}
+
+function renderTableWithHeaderRows(tableId, rows, headerRowCount = 1) {
+  const table = document.getElementById(tableId);
+  if (!table) {
+    return;
+  }
+  table.textContent = "";
+
+  if (!rows || rows.length === 0) {
+    return;
+  }
+
+  const normalizedRows = rows
+    .map((row) => trimTrailingEmptyCells((row || []).map((cell) => String(cell ?? ""))))
+    .filter((row) => row.length > 0);
+  if (normalizedRows.length === 0) {
+    return;
+  }
+
+  const columnCount = Math.max(...normalizedRows.map((row) => row.length));
+  const paddedRows = normalizedRows.map((row) => {
+    if (row.length >= columnCount) {
+      return row;
+    }
+    return [...row, ...Array(columnCount - row.length).fill("")];
+  });
+
+  const safeHeaderRowCount = Math.max(0, Math.min(headerRowCount, paddedRows.length));
+  if (safeHeaderRowCount > 0) {
+    const thead = document.createElement("thead");
+    paddedRows.slice(0, safeHeaderRowCount).forEach((rowCells, rowIndex) => {
+      const tr = document.createElement("tr");
+      rowCells.forEach((value, columnIndex) => {
+        const th = document.createElement("th");
+        th.textContent = value;
+        if (rowIndex === safeHeaderRowCount - 1 && columnIndex === 0) {
+          th.classList.add("metric-primary");
+        }
+        tr.appendChild(th);
+      });
+      thead.appendChild(tr);
+    });
+    table.appendChild(thead);
+  }
+
+  const bodyRows = paddedRows.slice(safeHeaderRowCount);
+  if (bodyRows.length === 0) {
+    return;
+  }
+
+  const tbody = document.createElement("tbody");
+  bodyRows.forEach((rowCells) => {
+    const tr = document.createElement("tr");
+    rowCells.forEach((value, columnIndex) => {
+      const td = document.createElement("td");
+      td.textContent = value;
+      if (columnIndex === 0) {
+        td.classList.add("metric-primary");
+      }
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+
+  if (tableId.startsWith("deepdive-")) {
+    applyDeepdiveConditionalFormatting(table);
   }
 }
 
@@ -147,8 +256,32 @@ function interpolateColor(startColor, endColor, ratio) {
 }
 
 function getColumnMetricDirection(tableId, headerText) {
-  const normalizedHeader = headerText.toLowerCase().trim();
+  const normalizedHeader = String(headerText ?? "").toLowerCase().trim();
   const costEfficiencyMetrics = new Set(["cpi", "cpfw d7", "d15 cpfsw", "d30 cpfsw"]);
+
+  if (tableId === "cpi-metrics-table") {
+    const cpiLowerBetterMetrics = new Set([
+      "cpi - meta",
+      "cpm - meta",
+      "cpi - uac",
+      "cpm - uac",
+      "cpi - tt",
+      "cpm - tiktok"
+    ]);
+    if (cpiLowerBetterMetrics.has(normalizedHeader)) {
+      return "lower_better";
+    }
+
+    const cpiHigherBetterMetrics = new Set([
+      "ctr - meta (%)",
+      "cti - meta (%)",
+      "ctr - uac",
+      "cti - uac",
+      "ctr - tiktok",
+      "cti - tiktok"
+    ]);
+    return cpiHigherBetterMetrics.has(normalizedHeader) ? "higher_better" : null;
+  }
 
   if (costEfficiencyMetrics.has(normalizedHeader)) {
     return "lower_better";
@@ -244,7 +377,8 @@ function applyDeepdiveConditionalFormatting(table) {
   }
 
   const tbodyRows = Array.from(table.querySelectorAll("tbody tr"));
-  const headerCells = Array.from(table.querySelectorAll("thead th"));
+  const headerRow = table.querySelector("thead tr:last-child");
+  const headerCells = headerRow ? Array.from(headerRow.querySelectorAll("th")) : [];
   if (tbodyRows.length === 0 || headerCells.length < 3) {
     return;
   }
@@ -655,6 +789,29 @@ function renderScriptLevelSpendsTable(tableId, rows) {
   const table = document.getElementById(tableId);
   table.textContent = "";
 
+  const showGroupMetaByStart = new Map();
+  (() => {
+    const groups = [];
+    let currentGroup = null;
+    rows.forEach((row, index) => {
+      const trimmedShow = (row.showName || "").trim();
+      if (trimmedShow) {
+        if (currentGroup) {
+          groups.push(currentGroup);
+        }
+        currentGroup = { label: trimmedShow, startIndex: index, length: 1 };
+      } else if (currentGroup) {
+        currentGroup.length += 1;
+      } else {
+        currentGroup = { label: "", startIndex: index, length: 1 };
+      }
+    });
+    if (currentGroup) {
+      groups.push(currentGroup);
+    }
+    groups.forEach((group) => showGroupMetaByStart.set(group.startIndex, group));
+  })();
+
   const thead = document.createElement("thead");
   const topHeaderRow = document.createElement("tr");
   const showHeader = document.createElement("th");
@@ -693,17 +850,21 @@ function renderScriptLevelSpendsTable(tableId, rows) {
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-  rows.forEach((row) => {
+  rows.forEach((row, index) => {
     const tr = document.createElement("tr");
     const isTotalRow = normalizeString(row.showName) === "total";
     if (isTotalRow) {
       tr.classList.add("script-level-total-row");
     }
 
-    const showNameCell = document.createElement("td");
-    showNameCell.textContent = row.showName;
-    showNameCell.classList.add("metric-primary");
-    tr.appendChild(showNameCell);
+    const groupMeta = showGroupMetaByStart.get(index);
+    if (groupMeta) {
+      const showNameCell = document.createElement("td");
+      showNameCell.textContent = groupMeta.label;
+      showNameCell.rowSpan = groupMeta.length;
+      showNameCell.classList.add("metric-primary", "script-level-show-cell");
+      tr.appendChild(showNameCell);
+    }
 
     const scriptNameCell = document.createElement("td");
     scriptNameCell.textContent = row.scriptName;
@@ -728,13 +889,13 @@ function getScriptLevelSpendsCsvText() {
 
 function buildShowSectionsMap(showCsvTextByKey) {
   const sectionsByShow = {};
-  const hiddenTab1CsvRows = new Set([5, 26]);
 
   Object.entries(showCsvTextByKey).forEach(([showKey, csvText]) => {
-    const parsedRows = parseCsv(csvText).filter((row, index) => !hiddenTab1CsvRows.has(index + 1));
+    const parsedRows = parseCsv(csvText);
     sectionsByShow[showKey] = {
       daily: extractSectionRows(parsedRows, "Day"),
-      weekly: extractSectionRows(parsedRows, "Week")
+      weekly: extractSectionRows(parsedRows, "Week"),
+      cpiMetrics: extractSectionRowsByMarker(parsedRows, "CPI Metrics", "Week")
     };
   });
 
@@ -928,6 +1089,211 @@ function buildLayoutGrid(layoutCsvText, maxRows = 24, maxCol = 33) {
   return { rows, cellMap };
 }
 
+let cachedRecoveriesLayoutRows = null;
+
+function getRecoveriesLayoutRows() {
+  if (cachedRecoveriesLayoutRows !== null) {
+    return cachedRecoveriesLayoutRows;
+  }
+  if (typeof SHOW_WISE_LAYOUT_CSV_TEXT !== "string") {
+    cachedRecoveriesLayoutRows = [];
+  } else {
+    cachedRecoveriesLayoutRows = parseCsv(SHOW_WISE_LAYOUT_CSV_TEXT);
+  }
+  return cachedRecoveriesLayoutRows;
+}
+
+let cachedRecoveriesLayoutMetadata = null;
+
+function getRecoveriesLayoutMetadata() {
+  if (cachedRecoveriesLayoutMetadata !== null) {
+    return cachedRecoveriesLayoutMetadata;
+  }
+  const layoutRows = getRecoveriesLayoutRows();
+  if (layoutRows.length === 0) {
+    cachedRecoveriesLayoutMetadata = null;
+    return null;
+  }
+  const headerRowIndex = layoutRows.findIndex((row) => {
+    return (row[3] || "").trim() === "D3";
+  });
+  if (headerRowIndex === -1) {
+    cachedRecoveriesLayoutMetadata = null;
+    return null;
+  }
+
+  const subSegments = new Set(["Facebook", "Google", "Tik Tok", "Organic"]);
+  const rowMap = new Map();
+  let currentParent = "";
+  for (let i = headerRowIndex + 1; i < layoutRows.length; i += 1) {
+    const row = layoutRows[i];
+    if (!row) {
+      continue;
+    }
+    const labelCellIndex = row.findIndex((cell, idx) => idx >= 3 && String(cell || "").trim());
+    const label = labelCellIndex >= 0 ? String(row[labelCellIndex]).trim() : "";
+    if (!label) {
+      currentParent = "";
+      continue;
+    }
+
+    let key = label;
+    if (label === "Android" || label === "iOS") {
+      currentParent = label;
+    } else if (currentParent && subSegments.has(label)) {
+      key = `${currentParent}>${label}`;
+    } else {
+      currentParent = "";
+    }
+    rowMap.set(key, row);
+  }
+
+  const metricRow = layoutRows[headerRowIndex] || [];
+  const firstMetricCol = metricRow.findIndex(
+    (cell, idx) => idx >= 4 && String(cell || "").trim()
+  );
+  const layoutMainColumnStartIndex = firstMetricCol >= 0 ? firstMetricCol : 4;
+  const layoutMainColumnOffset = Math.max(0, layoutMainColumnStartIndex - 1);
+
+  const findColumnIndex = (matcher) => {
+    for (const row of layoutRows) {
+      for (let col = 0; col < row.length; col += 1) {
+        const cell = String(row[col] || "").trim();
+        if (matcher(cell)) {
+          return col;
+        }
+      }
+    }
+    return -1;
+  };
+
+  const secondaryColumnIndexes = {
+    1: findColumnIndex((cell) => cell.includes("Current DRR")),
+    2: findColumnIndex((cell) => cell.includes("Current CPI")),
+    3: findColumnIndex(
+      (cell) => cell.includes("Spends% (D-2)") && !cell.includes("Platform")
+    ),
+    4: findColumnIndex(
+      (cell) => cell.includes("Spends%(D-2)") && cell.includes("Platform")
+    )
+  };
+
+  cachedRecoveriesLayoutMetadata = {
+    rowMap,
+    headerRowIndex,
+    secondaryColumnIndexes,
+    layoutMainColumnStartIndex,
+    layoutMainColumnOffset
+  };
+  return cachedRecoveriesLayoutMetadata;
+}
+
+function buildRecoveriesTableHeaderRows(layoutRows, metadata, showName, totalColumns) {
+  if (!metadata || !layoutRows || metadata.headerRowIndex <= 0) {
+    return null;
+  }
+  const topRow = layoutRows[metadata.headerRowIndex - 1] || [];
+  const metricRow = layoutRows[metadata.headerRowIndex] || [];
+  const startIndex = metadata.layoutMainColumnStartIndex ?? 4;
+  const boundaryIndex = topRow.findIndex((cell) =>
+    String(cell ?? "").toLowerCase().includes("current drr")
+  );
+  const endIndex = boundaryIndex === -1 ? metricRow.length : boundaryIndex;
+  const dataColumnCount = Math.max(0, endIndex - startIndex);
+  if (1 + dataColumnCount !== totalColumns) {
+    return null;
+  }
+  const topCells = [showName || ""];
+  const metricCells = [""];
+  for (let col = startIndex; col < startIndex + dataColumnCount; col += 1) {
+    topCells.push((topRow[col] || "").replace(/\s*\n\s*/g, " ").trim());
+    metricCells.push((metricRow[col] || "").replace(/\s*\n\s*/g, " ").trim());
+  }
+  return { topCells, metricCells, dataColumnStartIndex: startIndex };
+}
+
+function layoutCellHasValue(rowKey, layoutColumnIndex, metadata) {
+  if (!metadata || layoutColumnIndex < 0) {
+    return true;
+  }
+  const layoutRow = metadata.rowMap.get(rowKey);
+  if (!layoutRow || layoutColumnIndex >= layoutRow.length) {
+    return true;
+  }
+  return String(layoutRow[layoutColumnIndex] || "").trim() !== "";
+}
+
+function shouldRenderMainColumnValue(rowKey, columnIndex, metadata) {
+  if (!metadata) {
+    return true;
+  }
+  const layoutColumnOffset = metadata.layoutMainColumnOffset ?? 3;
+  const layoutColumnIndex = layoutColumnOffset + columnIndex;
+  return layoutCellHasValue(rowKey, layoutColumnIndex, metadata);
+}
+
+function shouldRenderSecondaryColumnValue(rowKey, columnIndex, metadata) {
+  if (!metadata) {
+    return true;
+  }
+  if (columnIndex === 0) {
+    return true;
+  }
+  const layoutColumnIndex = metadata.secondaryColumnIndexes[columnIndex];
+  if (layoutColumnIndex === -1 || layoutColumnIndex === undefined) {
+    return true;
+  }
+  return layoutCellHasValue(rowKey, layoutColumnIndex, metadata);
+}
+
+function getRecoveriesWeekBoundaries(fallbackYear) {
+  const layoutRows = getRecoveriesLayoutRows();
+  if (layoutRows.length === 0) {
+    return [];
+  }
+  const headerRow = layoutRows.find((row) => row.some((cell) => String(cell || "").includes("Week of >")));
+  if (!headerRow) {
+    return [];
+  }
+  const dateCells = headerRow
+    .map((cell, index) => ({ cell: String(cell || "").trim(), index }))
+    .filter(({ cell }) => /^\d{1,2}-[A-Za-z]{3}$/.test(cell));
+  const windows = [];
+  for (let i = 0; i + 1 < dateCells.length; i += 2) {
+    const startIso = parseSheetStyleDateToIso(dateCells[i].cell, fallbackYear);
+    const endIso = parseSheetStyleDateToIso(dateCells[i + 1].cell, fallbackYear);
+    const startDate = parseIsoDate(startIso);
+    const endDate = parseIsoDate(endIso);
+    if (startDate && endDate) {
+      windows.push({ startDate, endDate });
+    }
+  }
+  return windows;
+}
+
+function buildLegacyBlockWindows(refreshDate) {
+  const d1 = refreshDate;
+  const d2 = addDays(d1, -4);
+  const d3 = addDays(d1, -8);
+  const d4 = addDays(d1, -15);
+
+  const z10 = d4;
+  const o10 = addDays(z10, -7);
+  const m10 = addDays(o10, -6);
+  const x10 = addDays(z10, -6);
+  const af10 = d3;
+  const ad10 = addDays(af10, -6);
+  const aj10 = d2;
+  const ai10 = addDays(aj10, -6);
+
+  return [
+    { startDate: m10, endDate: o10 },
+    { startDate: x10, endDate: z10 },
+    { startDate: ad10, endDate: af10 },
+    { startDate: ai10, endDate: aj10 }
+  ];
+}
+
 function parseSheetStyleDateToIso(dateText, fallbackYear) {
   const label = String(dateText || "").trim();
   const match = label.match(/^(\d{1,2})-([A-Za-z]{3})$/);
@@ -947,7 +1313,7 @@ function parseSheetStyleDateToIso(dateText, fallbackYear) {
     nov: 10,
     dec: 11
   };
-  const month = monthMap[match[2].toLowerCase()];
+  const month = monthMap[String(match[2] ?? "").toLowerCase()];
   if (!Number.isFinite(day) || month === undefined) return "";
   const dateObj = new Date(fallbackYear, month, day);
   return toIsoDateString(toMidnightDate(dateObj));
@@ -1012,7 +1378,7 @@ function inRange(dateValue, rangeStart, rangeEnd) {
   return dateValue >= rangeStart && dateValue <= rangeEnd;
 }
 
-function buildRecoveriesMetricEngine(baseRows, costRows) {
+function buildRecoveriesMetricEngine(baseRows, costRows, layoutWeekBoundaries = []) {
   const refreshDates = Array.from(
     new Set(baseRows.map((row) => row.refresh_date).filter((value) => (value || "").trim() !== ""))
   ).sort((a, b) => b.localeCompare(a));
@@ -1174,70 +1540,142 @@ function buildRecoveriesMetricEngine(baseRows, costRows) {
     const d3 = addDays(d1, -8);
     const d4 = addDays(d1, -15);
 
-    const z10 = d4;
-    const o10 = addDays(z10, -7);
-    const m10 = addDays(o10, -6);
-
-    const x10 = addDays(z10, -6);
-
-    const af10 = d3;
-    const ad10 = addDays(af10, -6);
-
-    const aj10 = d2;
-    const ai10 = addDays(aj10, -6);
+    const hasLayoutWindows =
+      layoutWeekBoundaries &&
+      layoutWeekBoundaries.length >= 4 &&
+      layoutWeekBoundaries.slice(0, 4).every(
+        (window) => window?.startDate instanceof Date && window?.endDate instanceof Date
+      );
+    const windows = hasLayoutWindows ? layoutWeekBoundaries.slice(0, 4) : buildLegacyBlockWindows(refreshDate);
+    const [block1Window, block2Window, block3Window, block4Window] = windows;
 
     const headerDates = {
-      m10,
-      o10,
-      x10,
-      z10,
-      ad10,
-      af10,
-      ai10,
-      aj10
+      m10: block1Window.startDate,
+      o10: block1Window.endDate,
+      x10: block2Window.startDate,
+      z10: block2Window.endDate,
+      ad10: block3Window.startDate,
+      af10: block3Window.endDate,
+      ai10: block4Window.startDate,
+      aj10: block4Window.endDate
     };
 
     const rows = segments.map((segment) => {
       const baseSegmentRows = filterBase(baseRows, filters, segment);
       const costSegmentRows = filterCost(costRows, filters, segment);
 
-      const block1Cost = sumCost(costSegmentRows, m10, o10);
-      const block1D3 = block1Cost > 0 ? sumBase(baseSegmentRows, "revenue", m10, o10, "D3") / block1Cost : 0;
-      const block1D7 = block1Cost > 0 ? sumBase(baseSegmentRows, "revenue", m10, o10, "D7") / block1Cost : 0;
-      const block1D15 = block1Cost > 0 ? sumBase(baseSegmentRows, "revenue", m10, o10, "D15") / block1Cost : 0;
-      const block1Installs = sumBase(baseSegmentRows, "installs", m10, o10, "D15");
+      const block1Cost = sumCost(costSegmentRows, block1Window.startDate, block1Window.endDate);
+      const block1D3 =
+        block1Cost > 0 ? sumBase(baseSegmentRows, "revenue", block1Window.startDate, block1Window.endDate, "D3") / block1Cost : 0;
+      const block1D7 =
+        block1Cost > 0 ? sumBase(baseSegmentRows, "revenue", block1Window.startDate, block1Window.endDate, "D7") / block1Cost : 0;
+      const block1D15 =
+        block1Cost > 0 ? sumBase(baseSegmentRows, "revenue", block1Window.startDate, block1Window.endDate, "D15") / block1Cost : 0;
+      const block1Installs = sumBase(
+        baseSegmentRows,
+        "installs",
+        block1Window.startDate,
+        block1Window.endDate,
+        "D15"
+      );
       const block1Cpi = block1Installs > 0 ? block1Cost / block1Installs : 0;
-      const block1M9D7 = sumBase(baseSegmentRows, "M9_revenue_d7_projected", m10, o10, "D7");
-      const block1M9D15Nssw = sumBase(baseSegmentRows, "M9_revenue_d15_projected_cpnsw", m10, o10, "D15");
-      const block1M9D15Fsw = sumBase(baseSegmentRows, "M9_revenue_d15_projected_cpfsw", m10, o10, "D15");
+      const block1M9D7 = sumBase(
+        baseSegmentRows,
+        "M9_revenue_d7_projected",
+        block1Window.startDate,
+        block1Window.endDate,
+        "D7"
+      );
+      const block1M9D15Nssw = sumBase(
+        baseSegmentRows,
+        "M9_revenue_d15_projected_cpnsw",
+        block1Window.startDate,
+        block1Window.endDate,
+        "D15"
+      );
+      const block1M9D15Fsw = sumBase(
+        baseSegmentRows,
+        "M9_revenue_d15_projected_cpfsw",
+        block1Window.startDate,
+        block1Window.endDate,
+        "D15"
+      );
       const block1PaybackD7 = computePayback(block1M9D7, block1Cost);
       const block1PaybackD15Nssw = computePayback(block1M9D15Nssw, block1Cost);
       const block1PaybackD15Fsw = computePayback(block1M9D15Fsw, block1Cost);
 
-      const block2Cost = sumCost(costSegmentRows, x10, z10);
-      const block2D3 = block2Cost > 0 ? sumBase(baseSegmentRows, "revenue", x10, z10, "D3") / block2Cost : 0;
-      const block2D7 = block2Cost > 0 ? sumBase(baseSegmentRows, "revenue", x10, z10, "D7") / block2Cost : 0;
-      const block2D15 = block2Cost > 0 ? sumBase(baseSegmentRows, "revenue", x10, z10, "D15") / block2Cost : 0;
-      const block2Installs = sumBase(baseSegmentRows, "installs", x10, z10, "D15");
+      const block2Cost = sumCost(costSegmentRows, block2Window.startDate, block2Window.endDate);
+      const block2D3 =
+        block2Cost > 0 ? sumBase(baseSegmentRows, "revenue", block2Window.startDate, block2Window.endDate, "D3") / block2Cost : 0;
+      const block2D7 =
+        block2Cost > 0 ? sumBase(baseSegmentRows, "revenue", block2Window.startDate, block2Window.endDate, "D7") / block2Cost : 0;
+      const block2D15 =
+        block2Cost > 0 ? sumBase(baseSegmentRows, "revenue", block2Window.startDate, block2Window.endDate, "D15") / block2Cost : 0;
+      const block2Installs = sumBase(
+        baseSegmentRows,
+        "installs",
+        block2Window.startDate,
+        block2Window.endDate,
+        "D15"
+      );
       const block2Cpi = block2Installs > 0 ? block2Cost / block2Installs : 0;
-      const block2M9D7 = sumBase(baseSegmentRows, "M9_revenue_d7_projected", x10, z10, "D7");
-      const block2M9D15Nssw = sumBase(baseSegmentRows, "M9_revenue_d15_projected_cpnsw", x10, z10, "D15");
-      const block2M9D15Fsw = sumBase(baseSegmentRows, "M9_revenue_d15_projected_cpfsw", x10, z10, "D15");
+      const block2M9D7 = sumBase(
+        baseSegmentRows,
+        "M9_revenue_d7_projected",
+        block2Window.startDate,
+        block2Window.endDate,
+        "D7"
+      );
+      const block2M9D15Nssw = sumBase(
+        baseSegmentRows,
+        "M9_revenue_d15_projected_cpnsw",
+        block2Window.startDate,
+        block2Window.endDate,
+        "D15"
+      );
+      const block2M9D15Fsw = sumBase(
+        baseSegmentRows,
+        "M9_revenue_d15_projected_cpfsw",
+        block2Window.startDate,
+        block2Window.endDate,
+        "D15"
+      );
       const block2PaybackD7 = computePayback(block2M9D7, block2Cost);
       const block2PaybackD15Nssw = computePayback(block2M9D15Nssw, block2Cost);
       const block2PaybackD15 = computePayback(block2M9D15Fsw, block2Cost);
 
-      const block3Cost = sumCost(costSegmentRows, ad10, af10);
-      const block3D3 = block3Cost > 0 ? sumBase(baseSegmentRows, "revenue", ad10, af10, "D3") / block3Cost : 0;
-      const block3D7 = block3Cost > 0 ? sumBase(baseSegmentRows, "revenue", ad10, af10, "D7") / block3Cost : 0;
-      const block3Installs = sumBase(baseSegmentRows, "installs", ad10, af10, "D0");
+      const block3Cost = sumCost(costSegmentRows, block3Window.startDate, block3Window.endDate);
+      const block3D3 =
+        block3Cost > 0 ? sumBase(baseSegmentRows, "revenue", block3Window.startDate, block3Window.endDate, "D3") / block3Cost : 0;
+      const block3D7 =
+        block3Cost > 0 ? sumBase(baseSegmentRows, "revenue", block3Window.startDate, block3Window.endDate, "D7") / block3Cost : 0;
+      const block3Installs = sumBase(
+        baseSegmentRows,
+        "installs",
+        block3Window.startDate,
+        block3Window.endDate,
+        "D0"
+      );
       const block3Cpi = block3Installs > 0 ? block3Cost / block3Installs : 0;
-      const block3M9D7 = sumBase(baseSegmentRows, "M9_revenue_d7_projected", ad10, af10, "D7");
+      const block3M9D7 = sumBase(
+        baseSegmentRows,
+        "M9_revenue_d7_projected",
+        block3Window.startDate,
+        block3Window.endDate,
+        "D7"
+      );
       const block3PaybackD7 = computePayback(block3M9D7, block3Cost);
 
-      const block4Cost = sumCost(costSegmentRows, ai10, aj10);
-      const block4D3 = block4Cost > 0 ? sumBase(baseSegmentRows, "revenue", ai10, aj10, "D3") / block4Cost : 0;
-      const block4Installs = sumBase(baseSegmentRows, "installs", ai10, aj10, "D0");
+      const block4Cost = sumCost(costSegmentRows, block4Window.startDate, block4Window.endDate);
+      const block4D3 =
+        block4Cost > 0 ? sumBase(baseSegmentRows, "revenue", block4Window.startDate, block4Window.endDate, "D3") / block4Cost : 0;
+      const block4Installs = sumBase(
+        baseSegmentRows,
+        "installs",
+        block4Window.startDate,
+        block4Window.endDate,
+        "D0"
+      );
       const block4Cpi = block4Installs > 0 ? block4Cost / block4Installs : 0;
 
       const d2Date = addDays(d1, -2);
@@ -1303,72 +1741,83 @@ function buildRecoveriesMetricEngine(baseRows, costRows) {
 
 function renderShowWiseRecoveriesEngineTable(tableId, computed) {
   const table = document.getElementById(tableId);
+  const secondaryTable = document.getElementById("recoveries-current-metrics-table");
+
+  if (secondaryTable) {
+    secondaryTable.textContent = "";
+  }
+  if (!table) {
+    return;
+  }
   table.textContent = "";
-  if (!computed) return;
+  if (!computed) {
+    return;
+  }
 
   const { rows, dates, showName } = computed;
+  const layoutMetadata = getRecoveriesLayoutMetadata();
+  const layoutRows = getRecoveriesLayoutRows() || [];
   const formatPctRatio = (value) => (Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : "");
   const formatNumber = (value, decimals = 0) => {
     if (!Number.isFinite(value)) return "";
     return value.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
   };
-
+  
   const formatDateLabel = (dateObj) =>
     dateObj instanceof Date
       ? dateObj.toLocaleDateString("en-GB", { day: "numeric", month: "short" }).replace(" ", "-")
       : "";
+
+  const hasNonZeroMetric = (value) => Number.isFinite(value) && value !== 0;
 
   const totalColumns =
     1 + // Segment
     11 + // Block1
     11 + // Block2
     6 + // Block3
-    4 + // Block4
-    4; // Current metrics
+    4; // Block4
+
+  const buildFallbackTopRow = () => {
+    const cells = Array(totalColumns).fill("");
+    for (let i = 0; i < totalColumns; i += 1) {
+      if (i === 0) {
+        cells[i] = showName || "";
+      }
+      if (i === 1) cells[i] = "Week of >";
+      if (i === 1 + 8) cells[i] = formatDateLabel(dates.m10);
+      if (i === 1 + 10) cells[i] = formatDateLabel(dates.o10);
+
+      if (i === 12) cells[i] = "Week of >";
+      if (i === 12 + 8) cells[i] = formatDateLabel(dates.x10);
+      if (i === 12 + 10) cells[i] = formatDateLabel(dates.z10);
+
+      if (i === 23) cells[i] = "Week of >";
+      if (i === 23 + 3) cells[i] = formatDateLabel(dates.ad10);
+      if (i === 23 + 5) cells[i] = formatDateLabel(dates.af10);
+
+      if (i === 29) cells[i] = "Week of >";
+      if (i === 29 + 2) cells[i] = formatDateLabel(dates.ai10);
+      if (i === 29 + 3) cells[i] = formatDateLabel(dates.aj10);
+    }
+    return cells;
+  };
+
+  const headerRowsFromLayout = buildRecoveriesTableHeaderRows(layoutRows, layoutMetadata, showName, totalColumns);
+  const headerRow1Cells = headerRowsFromLayout?.topCells ?? buildFallbackTopRow();
 
   const thead = document.createElement("thead");
-
   const headerRow1 = document.createElement("tr");
 
-  for (let i = 0; i < totalColumns; i += 1) {
+  headerRow1Cells.forEach((cellValue, index) => {
     const th1 = document.createElement("th");
-    th1.textContent = "";
-
-    if (i === 0) {
-      th1.textContent = showName || "";
+    th1.textContent = cellValue;
+    if (index === 0) {
       th1.classList.add("recoveries-show-title");
     }
-
-    // Block 1 (columns 1-11)
-    if (i === 1) th1.textContent = "Week of >";
-    if (i === 1 + 8) th1.textContent = formatDateLabel(dates.m10);
-    if (i === 1 + 10) th1.textContent = formatDateLabel(dates.o10);
-
-    // Block 2 (columns 12-22)
-    if (i === 12) th1.textContent = "Week of >";
-    if (i === 12 + 8) th1.textContent = formatDateLabel(dates.x10);
-    if (i === 12 + 10) th1.textContent = formatDateLabel(dates.z10);
-
-    // Block 3 (columns 23-28)
-    if (i === 23) th1.textContent = "Week of >";
-    if (i === 23 + 3) th1.textContent = formatDateLabel(dates.ad10);
-    if (i === 23 + 5) th1.textContent = formatDateLabel(dates.af10);
-
-    // Block 4 (columns 29-32)
-    if (i === 29) th1.textContent = "Week of >";
-    if (i === 29 + 2) th1.textContent = formatDateLabel(dates.ai10);
-    if (i === 29 + 3) th1.textContent = formatDateLabel(dates.aj10);
-
-    // Current metrics (columns 33-36)
-    if (i === 33) th1.textContent = "Current DRR (D-2)";
-    if (i === 34) th1.textContent = "Current CPI (D-2)";
-    if (i === 35) th1.textContent = "Spends% (D-2)";
-    if (i === 36) th1.textContent = "Spends% (D-2) Platform Level";
-
     headerRow1.appendChild(th1);
-  }
+  });
 
-  const blockHeaders = [
+  const blockHeaders = headerRowsFromLayout?.metricCells ?? [
     "",
     "D3",
     "D7",
@@ -1401,11 +1850,7 @@ function renderShowWiseRecoveriesEngineTable(tableId, computed) {
     "D3",
     "Cost",
     "CPI",
-    "Potential Payback",
-    "",
-    "",
-    "",
-    ""
+    "Potential Payback"
   ];
 
   const headerRow3 = document.createElement("tr");
@@ -1420,33 +1865,70 @@ function renderShowWiseRecoveriesEngineTable(tableId, computed) {
   thead.appendChild(headerRow3);
   table.appendChild(thead);
 
+  if (secondaryTable) {
+    const secondaryThead = document.createElement("thead");
+    const secondaryShowRow = document.createElement("tr");
+    for (let i = 0; i < 5; i += 1) {
+      const th = document.createElement("th");
+      if (i === 0) {
+        th.textContent = showName || "";
+        th.classList.add("recoveries-show-title");
+      }
+      secondaryShowRow.appendChild(th);
+    }
+  const secondaryColumnHeaders = [
+    "Segment",
+    "Current DRR (D-2)",
+    "Current CPI (D-2)",
+    "Spends% (D-2)",
+    "Spends% (D-2) Platform Level"
+  ];
+    const secondaryHeaderRow = document.createElement("tr");
+    secondaryColumnHeaders.forEach((header, index) => {
+      const th = document.createElement("th");
+      th.textContent = header;
+      if (index === 0) {
+        th.classList.add("metric-primary");
+      }
+      secondaryHeaderRow.appendChild(th);
+    });
+    secondaryThead.appendChild(secondaryShowRow);
+    secondaryThead.appendChild(secondaryHeaderRow);
+    secondaryTable.appendChild(secondaryThead);
+  }
+
   const tbody = document.createElement("tbody");
+  const secondaryTbody = document.createElement("tbody");
   const growthRow = rows.find((entry) => entry.segment.trim() === "Growth");
   const growthTotal = growthRow?.current?.drr || 0;
   let activePlatform = "";
   let activePlatformTotal = 0;
 
+  const computeCurrentMetrics = (row, segmentName, platformTotal) => {
+    const drr = row.current.drr;
+    const cpi = row.current.cpi;
+    const spendPct = segmentName === "All (w/ Testing)" || !growthTotal ? "" : drr / growthTotal;
+    let platformValue = "";
+    if (segmentName === "Android" || segmentName === "iOS") {
+      platformValue = segmentName;
+    } else if (row.indentLevel && platformTotal) {
+      platformValue = drr / platformTotal;
+    }
+    return { drr, cpi, spendPct, platformValue };
+  };
+
   rows.forEach((row) => {
-    const tr = document.createElement("tr");
     const segmentName = row.segment.trim();
     if (segmentName === "Android" || segmentName === "iOS") {
       activePlatform = segmentName;
       activePlatformTotal = row.current.drr || 0;
     }
 
-    const currentSpendPct =
-      segmentName === "All (w/ Testing)" || !growthTotal
-        ? ""
-        : row.current.drr / growthTotal;
+    const currentMetrics = computeCurrentMetrics(row, segmentName, activePlatformTotal);
+    const layoutRowKey =
+      row.indentLevel && activePlatform ? `${activePlatform}>${segmentName}` : segmentName;
 
-    let platformLevelValue = "";
-    if (segmentName === "Android" || segmentName === "iOS") {
-      platformLevelValue = segmentName;
-    } else if (row.indentLevel && activePlatformTotal) {
-      platformLevelValue = row.current.drr / activePlatformTotal;
-    }
-
-    const values = [
+    const mainValues = [
       row.segment,
       formatPctRatio(row.block1.d3),
       formatPctRatio(row.block1.d7),
@@ -1479,18 +1961,41 @@ function renderShowWiseRecoveriesEngineTable(tableId, computed) {
       formatPctRatio(row.block4.d3),
       formatNumber(row.block4.cost),
       formatNumber(row.block4.cpi, 1),
-      row.block4.potentialPayback,
-      formatNumber(row.current.drr),
-      formatNumber(row.current.cpi, 1),
-      currentSpendPct !== "" ? formatPctRatio(currentSpendPct) : "",
-      typeof platformLevelValue === "string"
-        ? platformLevelValue
-        : platformLevelValue !== ""
-        ? formatPctRatio(platformLevelValue)
+      row.block4.potentialPayback
+    ];
+
+    const secondaryValues = [
+      row.segment,
+      formatNumber(currentMetrics.drr),
+      formatNumber(currentMetrics.cpi, 1),
+      currentMetrics.spendPct ? formatPctRatio(currentMetrics.spendPct) : "",
+      typeof currentMetrics.platformValue === "string"
+        ? currentMetrics.platformValue
+        : currentMetrics.platformValue !== ""
+        ? formatPctRatio(currentMetrics.platformValue)
         : ""
     ];
 
-    values.forEach((value, index) => {
+    mainValues.forEach((_, index) => {
+      if (index === 0) {
+        return;
+      }
+      if (!shouldRenderMainColumnValue(layoutRowKey, index, layoutMetadata)) {
+        mainValues[index] = "";
+      }
+    });
+
+    secondaryValues.forEach((_, index) => {
+      if (index === 0) {
+        return;
+      }
+      if (!shouldRenderSecondaryColumnValue(layoutRowKey, index, layoutMetadata)) {
+        secondaryValues[index] = "";
+      }
+    });
+
+    const tr = document.createElement("tr");
+    mainValues.forEach((value, index) => {
       const td = document.createElement("td");
       td.textContent = value;
       if (index === 0) {
@@ -1502,17 +2007,46 @@ function renderShowWiseRecoveriesEngineTable(tableId, computed) {
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
-  });
-  table.appendChild(tbody);
-}
 
+    if (secondaryTable) {
+      const secondaryTr = document.createElement("tr");
+      secondaryValues.forEach((value, index) => {
+        const td = document.createElement("td");
+        td.textContent = value;
+        if (index === 0) {
+          td.classList.add("metric-primary");
+          if (row.indentLevel) {
+            td.classList.add("recoveries-subsegment");
+          }
+        }
+        secondaryTr.appendChild(td);
+      });
+      secondaryTbody.appendChild(secondaryTr);
+    }
+  });
+
+  table.appendChild(tbody);
+  if (secondaryTable) {
+    secondaryTable.appendChild(secondaryTbody);
+  }
+}
 function uniqueSorted(values) {
-  return Array.from(new Set(values.filter((value) => value !== ""))).sort((a, b) => a.localeCompare(b));
+  const sanitized = values
+    .map((value) => String(value ?? "").trim())
+    .filter((value) => value !== "");
+  return Array.from(new Set(sanitized)).sort((a, b) => a.localeCompare(b));
 }
 
 function orderDayDiffValues(values) {
   const dayDiffOrder = ["d3", "d7", "d15", "d30"];
-  const normalized = Array.from(new Set(values.filter((value) => value !== "").map((value) => value.toLowerCase())));
+  const normalized = Array.from(
+    new Set(
+      values
+        .map((value) => String(value ?? "").trim())
+        .filter((value) => value !== "")
+        .map((value) => value.toLowerCase())
+    )
+  );
   const orderedKnown = dayDiffOrder.filter((dayDiff) => normalized.includes(dayDiff));
   const remaining = normalized.filter((value) => !dayDiffOrder.includes(value)).sort((a, b) => a.localeCompare(b));
   return [...orderedKnown, ...remaining];
@@ -1846,6 +2380,364 @@ function getDeepdiveCost(row) {
   return parseMetricNumber(row["Total Cost ($)"] ?? row.Cost);
 }
 
+const DEEPDIVE_WEEKLY_SHOWWISE_CSV_URL_BY_KEY = {
+  MVS: "./deepdive-weekly-mvs.csv",
+  FLBM: "./deepdive-weekly-flbm.csv",
+  WBT: "./deepdive-weekly-wbt.csv"
+};
+
+const DEEPDIVE_DAILY_SHOWWISE_CSV_URL = "./deepdive-daily-pivot.csv";
+
+let deepdiveWeeklyShowwiseTablesByKey = {};
+let deepdiveWeeklyShowwiseLoadPromise = null;
+let deepdiveDailyShowwiseTablesByKey = {};
+let deepdiveDailyShowwiseLoadPromise = null;
+
+function getRuntimeDeepdiveWeeklyCsvTextByKey() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const candidateValues = [window.DEEPDIVE_WEEKLY_CSV_TEXT_BY_KEY, window.deepdiveWeeklyCsvTextByKey];
+  for (let i = 0; i < candidateValues.length; i += 1) {
+    const candidate = candidateValues[i];
+    if (candidate && typeof candidate === "object") {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function getRuntimeDeepdiveDailyCsvText() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const candidateValues = [window.DEEPDIVE_DAILY_CSV_TEXT, window.deepdiveDailyCsvText];
+  for (let i = 0; i < candidateValues.length; i += 1) {
+    const candidate = candidateValues[i];
+    if (typeof candidate === "string" && candidate.trim() !== "") {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function extractRowsFromColumnWindow(rows, rowStartIndex, rowEndIndex, columnStartIndex, columnEndIndex) {
+  const extractedRows = [];
+  for (let rowIndex = rowStartIndex; rowIndex <= rowEndIndex; rowIndex += 1) {
+    const sourceRow = rows[rowIndex] || [];
+    const rawSlice = sourceRow.slice(columnStartIndex, columnEndIndex + 1);
+    const normalizedSlice = trimTrailingEmptyCells(rawSlice.map((cell) => String(cell ?? "")));
+    if (!isCompletelyEmptyRow(normalizedSlice)) {
+      extractedRows.push(normalizedSlice);
+    }
+  }
+  return extractedRows;
+}
+
+function parseDeepdiveWeeklyShowwiseCsv(csvText) {
+  const rows = parseCsv(csvText);
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const firstHeaderRow = rows[0] || [];
+  const firstBlockColumnStarts = [];
+  firstHeaderRow.forEach((cell, index) => {
+    if (normalizeString(cell) === "sum of total cost ($)") {
+      firstBlockColumnStarts.push(index);
+    }
+  });
+  if (firstBlockColumnStarts.length < 3) {
+    return null;
+  }
+
+  const firstBlockGrandTotalRowIndex = rows.findIndex(
+    (row, index) =>
+      index >= 2 && normalizeString((row || [])[firstBlockColumnStarts[0]] || "") === "grand total"
+  );
+  if (firstBlockGrandTotalRowIndex === -1) {
+    return null;
+  }
+
+  const rowSpanWidth = Math.max((rows[1] || []).length, firstHeaderRow.length);
+  const firstBlockColumnEnds = firstBlockColumnStarts.map((startIndex, index) => {
+    const nextStartIndex = firstBlockColumnStarts[index + 1];
+    return typeof nextStartIndex === "number" ? nextStartIndex - 1 : rowSpanWidth - 1;
+  });
+
+  const mediaSourceRows = extractRowsFromColumnWindow(
+    rows,
+    1,
+    firstBlockGrandTotalRowIndex,
+    firstBlockColumnStarts[0],
+    firstBlockColumnEnds[0]
+  );
+  const optimizationRows = extractRowsFromColumnWindow(
+    rows,
+    1,
+    firstBlockGrandTotalRowIndex,
+    firstBlockColumnStarts[1],
+    firstBlockColumnEnds[1]
+  );
+  const laCodeRows = extractRowsFromColumnWindow(
+    rows,
+    1,
+    firstBlockGrandTotalRowIndex,
+    firstBlockColumnStarts[2],
+    firstBlockColumnEnds[2]
+  );
+
+  let secondBlockStartRowIndex = -1;
+  for (let rowIndex = firstBlockGrandTotalRowIndex + 1; rowIndex < rows.length; rowIndex += 1) {
+    if (normalizeString((rows[rowIndex] || [])[0] || "") === "sum of total cost ($)") {
+      secondBlockStartRowIndex = rowIndex;
+      break;
+    }
+  }
+
+  let mediaSourceLaCodeRows = [];
+  if (secondBlockStartRowIndex >= 0) {
+    let secondBlockGrandTotalRowIndex = -1;
+    for (let rowIndex = secondBlockStartRowIndex + 1; rowIndex < rows.length; rowIndex += 1) {
+      if (normalizeString((rows[rowIndex] || [])[0] || "") === "grand total") {
+        secondBlockGrandTotalRowIndex = rowIndex;
+        break;
+      }
+    }
+
+    if (secondBlockGrandTotalRowIndex > secondBlockStartRowIndex) {
+      const secondBlockColumnEnd = rows
+        .slice(secondBlockStartRowIndex, secondBlockGrandTotalRowIndex + 1)
+        .reduce((maxValue, row) => Math.max(maxValue, (row || []).length - 1), 0);
+      mediaSourceLaCodeRows = extractRowsFromColumnWindow(
+        rows,
+        secondBlockStartRowIndex,
+        secondBlockGrandTotalRowIndex,
+        0,
+        secondBlockColumnEnd
+      );
+    }
+  }
+
+  if (mediaSourceRows.length === 0 || optimizationRows.length === 0 || laCodeRows.length === 0) {
+    return null;
+  }
+
+  return {
+    mediaSourceRows,
+    optimizationRows,
+    laCodeRows,
+    mediaSourceLaCodeRows
+  };
+}
+
+async function loadDeepdiveWeeklyShowwiseTablesByKey() {
+  if (deepdiveWeeklyShowwiseLoadPromise) {
+    return deepdiveWeeklyShowwiseLoadPromise;
+  }
+
+  deepdiveWeeklyShowwiseLoadPromise = (async () => {
+    const runtimeCsvTextByKey = getRuntimeDeepdiveWeeklyCsvTextByKey();
+    if (runtimeCsvTextByKey) {
+      const runtimeLoadedByKey = {};
+      Object.entries(runtimeCsvTextByKey).forEach(([showKeyRaw, csvText]) => {
+        if (typeof csvText !== "string" || csvText.trim() === "") {
+          return;
+        }
+        const parsed = parseDeepdiveWeeklyShowwiseCsv(csvText);
+        if (!parsed) {
+          return;
+        }
+        const showKey = normalizeIdString(showKeyRaw).toUpperCase();
+        if (showKey) {
+          runtimeLoadedByKey[showKey] = parsed;
+        }
+      });
+
+      if (Object.keys(runtimeLoadedByKey).length > 0) {
+        deepdiveWeeklyShowwiseTablesByKey = runtimeLoadedByKey;
+        return runtimeLoadedByKey;
+      }
+      console.warn(
+        "[Deepdive] Runtime deepdiveWeeklyCsvTextByKey is present but no valid show tables were parsed; falling back to static CSV files."
+      );
+    }
+
+    const loadedDataByKey = {};
+    const cacheBust = Date.now();
+
+    await Promise.all(
+      Object.entries(DEEPDIVE_WEEKLY_SHOWWISE_CSV_URL_BY_KEY).map(async ([showKey, csvUrl]) => {
+        try {
+          const response = await fetch(`${csvUrl}?cacheBust=${cacheBust}`, {
+            method: "GET",
+            cache: "no-store"
+          });
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const csvText = await response.text();
+          const parsed = parseDeepdiveWeeklyShowwiseCsv(csvText);
+          if (!parsed) {
+            throw new Error("CSV structure mismatch");
+          }
+          loadedDataByKey[showKey] = parsed;
+        } catch (error) {
+          console.warn(`[Deepdive] Could not load weekly CSV for ${showKey}:`, error);
+        }
+      })
+    );
+
+    deepdiveWeeklyShowwiseTablesByKey = loadedDataByKey;
+    return loadedDataByKey;
+  })();
+
+  return deepdiveWeeklyShowwiseLoadPromise;
+}
+
+function findShowLabelCell(rows, showName) {
+  const target = normalizeString(showName);
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex] || [];
+    for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+      if (normalizeString(row[columnIndex]) === target) {
+        return { rowIndex, columnIndex };
+      }
+    }
+  }
+  return null;
+}
+
+function extractDeepdiveDailyTableForShow(rows, showName) {
+  const labelCell = findShowLabelCell(rows, showName);
+  if (!labelCell) {
+    return null;
+  }
+
+  const showColumnIndex = labelCell.columnIndex;
+  let topHeaderRowIndex = -1;
+  for (let rowIndex = labelCell.rowIndex + 1; rowIndex < rows.length; rowIndex += 1) {
+    if (normalizeString((rows[rowIndex] || [])[showColumnIndex] || "") === "sum of total cost ($)") {
+      topHeaderRowIndex = rowIndex;
+      break;
+    }
+  }
+  if (topHeaderRowIndex === -1) {
+    return null;
+  }
+
+  let headerRowIndex = -1;
+  for (let rowIndex = topHeaderRowIndex + 1; rowIndex < rows.length; rowIndex += 1) {
+    if (normalizeString((rows[rowIndex] || [])[showColumnIndex] || "") === "spend period") {
+      headerRowIndex = rowIndex;
+      break;
+    }
+  }
+  if (headerRowIndex === -1) {
+    return null;
+  }
+
+  const headerRow = rows[headerRowIndex] || [];
+  let columnEndIndex = showColumnIndex;
+  for (let columnIndex = showColumnIndex; columnIndex < headerRow.length; columnIndex += 1) {
+    if (String(headerRow[columnIndex] ?? "").trim() === "") {
+      break;
+    }
+    columnEndIndex = columnIndex;
+  }
+
+  const tableRows = [];
+  tableRows.push((rows[topHeaderRowIndex] || []).slice(showColumnIndex, columnEndIndex + 1));
+  tableRows.push((rows[headerRowIndex] || []).slice(showColumnIndex, columnEndIndex + 1));
+
+  for (let rowIndex = headerRowIndex + 1; rowIndex < rows.length; rowIndex += 1) {
+    const rowSlice = (rows[rowIndex] || []).slice(showColumnIndex, columnEndIndex + 1);
+    if (isCompletelyEmptyRow(rowSlice)) {
+      if (tableRows.length > 2) {
+        break;
+      }
+      continue;
+    }
+    tableRows.push(rowSlice);
+    if (normalizeString(rowSlice[0] || "") === "grand total") {
+      break;
+    }
+  }
+
+  const hasHeader = tableRows.length >= 2 && normalizeString(tableRows[1][0] || "") === "spend period";
+  const hasGrandTotal = tableRows.some((row) => normalizeString(row[0] || "") === "grand total");
+  if (!hasHeader || !hasGrandTotal) {
+    return null;
+  }
+
+  return tableRows;
+}
+
+function parseDeepdiveDailyShowwiseCsv(csvText) {
+  const rows = parseCsv(csvText);
+  if (rows.length === 0) {
+    return {};
+  }
+
+  const showNameByKey = {
+    MVS: "My Vampire System",
+    FLBM: "First Legendary Beast Master",
+    WBT: "Weakest Beast Tamer"
+  };
+  const tableRowsByKey = {};
+
+  Object.entries(showNameByKey).forEach(([showKey, showName]) => {
+    const extractedRows = extractDeepdiveDailyTableForShow(rows, showName);
+    if (extractedRows && extractedRows.length > 0) {
+      tableRowsByKey[showKey] = extractedRows;
+    }
+  });
+
+  return tableRowsByKey;
+}
+
+async function loadDeepdiveDailyShowwiseTablesByKey() {
+  if (deepdiveDailyShowwiseLoadPromise) {
+    return deepdiveDailyShowwiseLoadPromise;
+  }
+
+  deepdiveDailyShowwiseLoadPromise = (async () => {
+    const runtimeCsvText = getRuntimeDeepdiveDailyCsvText();
+    if (runtimeCsvText) {
+      const parsedByKey = parseDeepdiveDailyShowwiseCsv(runtimeCsvText);
+      if (Object.keys(parsedByKey).length > 0) {
+        deepdiveDailyShowwiseTablesByKey = parsedByKey;
+        return deepdiveDailyShowwiseTablesByKey;
+      }
+      console.warn(
+        "[Deepdive] Runtime deepdiveDailyCsvText is present but no valid show tables were parsed; falling back to static CSV file."
+      );
+    }
+
+    try {
+      const response = await fetch(`${DEEPDIVE_DAILY_SHOWWISE_CSV_URL}?cacheBust=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store"
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const csvText = await response.text();
+      deepdiveDailyShowwiseTablesByKey = parseDeepdiveDailyShowwiseCsv(csvText);
+    } catch (error) {
+      deepdiveDailyShowwiseTablesByKey = {};
+      console.warn("[Deepdive] Could not load daily show-wise CSV:", error);
+    }
+
+    return deepdiveDailyShowwiseTablesByKey;
+  })();
+
+  return deepdiveDailyShowwiseLoadPromise;
+}
+
 function getWeekStartMonday(dateValue) {
   const normalized = toMidnightDate(dateValue);
   const mondayOffset = (normalized.getDay() + 6) % 7;
@@ -2149,13 +3041,20 @@ function init() {
     renderTable("weekly-table", sectionsByShow[selectedShow]?.weekly || []);
   }
 
+  function renderCpiMetricsSelectedShow() {
+    const selectedShow = performanceShowSelect.value;
+    renderTable("cpi-metrics-table", sectionsByShow[selectedShow]?.cpiMetrics || []);
+  }
+
   performanceShowSelect.addEventListener("change", () => {
     renderDailySelectedShow();
     renderWeeklySelectedShow();
+    renderCpiMetricsSelectedShow();
   });
 
   renderDailySelectedShow();
   renderWeeklySelectedShow();
+  renderCpiMetricsSelectedShow();
 
   if (typeof SPENDS_PLAN_CSV_TEXT !== "string") {
     throw new Error("SPENDS_PLAN_CSV_TEXT is not available in index.html");
@@ -2200,8 +3099,13 @@ function init() {
 
   const recoveriesBaseRows = buildCsvRecords(SHOW_WISE_BASE_DATA_CSV_TEXT);
   const recoveriesCostRows = buildCsvRecords(SHOW_WISE_COST_DATA_CSV_TEXT);
+  const layoutWeekBoundaries = [];
   const recoveriesLayoutGrid = buildLayoutGrid(SHOW_WISE_LAYOUT_CSV_TEXT, 24, 33);
-  const recoveriesEngine = buildRecoveriesMetricEngine(recoveriesBaseRows, recoveriesCostRows);
+  const recoveriesEngine = buildRecoveriesMetricEngine(
+    recoveriesBaseRows,
+    recoveriesCostRows,
+    layoutWeekBoundaries
+  );
 
   const recoveriesRefreshDateSelect = document.getElementById("recoveries-refresh-date-select");
   const recoveriesShowSelect = document.getElementById("recoveries-show-select");
@@ -2268,6 +3172,8 @@ function init() {
   }
 
   const latestRefreshYear = parseIsoDate(recoveriesEngine.refreshDates[0])?.getFullYear() || new Date().getFullYear();
+  const parsedWeekBoundaries = getRecoveriesWeekBoundaries(latestRefreshYear);
+  layoutWeekBoundaries.splice(0, layoutWeekBoundaries.length, ...parsedWeekBoundaries);
   const layoutRefreshIso = parseSheetStyleDateToIso(recoveriesLayoutGrid.cellMap.get("D1"), latestRefreshYear);
   if (layoutRefreshIso && recoveriesEngine.refreshDates.includes(layoutRefreshIso)) {
     recoveriesRefreshDateSelect.value = layoutRefreshIso;
@@ -2316,15 +3222,6 @@ function init() {
   }
 
   const rawDumpRows = buildRawDumpRows(RAW_DUMP_CSV_TEXT);
-  const deepdiveWeeklyRawRows =
-    typeof DEEPDIVE_WEEKLY_RAW_CSV_TEXT === "string" ? buildRawDumpRows(DEEPDIVE_WEEKLY_RAW_CSV_TEXT) : rawDumpRows;
-  const deepdiveDailyRawRows =
-    typeof DEEPDIVE_DAILY_RAW_CSV_TEXT === "string" ? buildRawDumpRows(DEEPDIVE_DAILY_RAW_CSV_TEXT) : rawDumpRows;
-  const deepdiveShowMap = {
-    MVS: "My Vampire System",
-    FLBM: "First Legendary Beast Master",
-    WBT: "Weakest Beast Tamer"
-  };
   const deepdiveShowSelect = document.getElementById("deepdive-show-select");
 
   function renderIosDeepdiveTables() {
@@ -2332,109 +3229,43 @@ function init() {
       return;
     }
 
-    const selectedShowName = deepdiveShowMap[deepdiveShowSelect.value] || "";
-    const selectedWeeklyShowRows = deepdiveWeeklyRawRows.filter(
-      (row) =>
-        normalizeString(getDeepdiveShowName(row)) === normalizeString(selectedShowName) &&
-        normalizeString(row.Platform) === "ios"
-    );
-    const selectedDailyShowRows = deepdiveDailyRawRows.filter(
-      (row) =>
-        normalizeString(getDeepdiveShowName(row)) === normalizeString(selectedShowName) &&
-        normalizeString(row.Platform) === "ios"
-    );
+    const selectedShowKey = normalizeIdString(deepdiveShowSelect.value).toUpperCase();
 
-    const weeklyBuckets = getLastPeriodsFromRows(selectedWeeklyShowRows, getDeepdiveDateValue, 11);
-    const weeklyBucketIsoSet = new Set(weeklyBuckets.map((bucket) => bucket.iso));
-    const dailyBuckets = getLastPeriodsFromRows(selectedDailyShowRows, getDeepdiveDateValue, 11);
-    const dailyBucketIsoSet = new Set(dailyBuckets.map((bucket) => bucket.iso));
+    const selectedShowTables = deepdiveWeeklyShowwiseTablesByKey[selectedShowKey];
+    if (selectedShowTables) {
+      renderTableWithHeaderRows("deepdive-weekly-media-source-table", selectedShowTables.mediaSourceRows, 1);
+      renderTableWithHeaderRows("deepdive-weekly-optimization-table", selectedShowTables.optimizationRows, 1);
+      renderTableWithHeaderRows("deepdive-weekly-la-code-table", selectedShowTables.laCodeRows, 1);
+      renderTableWithHeaderRows(
+        "deepdive-weekly-media-source-la-code-table",
+        selectedShowTables.mediaSourceLaCodeRows,
+        3
+      );
+    } else {
+      renderTableWithHeaderRows("deepdive-weekly-media-source-table", [], 1);
+      renderTableWithHeaderRows("deepdive-weekly-optimization-table", [], 1);
+      renderTableWithHeaderRows("deepdive-weekly-la-code-table", [], 1);
+      renderTableWithHeaderRows("deepdive-weekly-media-source-la-code-table", [], 3);
+    }
 
-    const weeklyRows = selectedWeeklyShowRows
-      .map((row) => {
-        const weekDate = parseIsoDate(getDeepdiveDateValue(row));
-        if (!weekDate) {
-          return null;
-        }
-        const weekIso = toIsoDateString(toMidnightDate(weekDate));
-        return weeklyBucketIsoSet.has(weekIso) ? { ...row, __weekIso: weekIso } : null;
-      })
-      .filter((row) => row !== null);
-
-    const dailyRows = selectedDailyShowRows
-      .map((row) => {
-        const installDate = parseIsoDate(getDeepdiveDateValue(row));
-        if (!installDate) {
-          return null;
-        }
-        const dayIso = toIsoDateString(installDate);
-        return dailyBucketIsoSet.has(dayIso) ? { ...row, __dayIso: dayIso } : null;
-      })
-      .filter((row) => row !== null);
-
-    const weeklyByMedia = buildPivotMatrix(
-      weeklyRows,
-      (row) => row.__weekIso,
-      (row) => getDeepdiveMediaSource(row) || "Unknown",
-      getDeepdiveCost
-    );
-    renderPivotTable(
-      "deepdive-weekly-media-source-table",
-      "Week",
-      weeklyBuckets,
-      weeklyByMedia.dimensionValues,
-      weeklyByMedia.valueMap,
-      { valueMode: "percentage_split", includeTotalColumn: false }
-    );
-
-    const weeklyByOptimization = buildPivotMatrix(
-      weeklyRows,
-      (row) => row.__weekIso,
-      (row) => getDeepdiveOptimization(row) || "Unknown",
-      getDeepdiveCost
-    );
-    renderPivotTable(
-      "deepdive-weekly-optimization-table",
-      "Week",
-      weeklyBuckets,
-      weeklyByOptimization.dimensionValues,
-      weeklyByOptimization.valueMap,
-      { valueMode: "percentage_split", includeTotalColumn: false }
-    );
-
-    const weeklyByLaCode = buildPivotMatrix(
-      weeklyRows,
-      (row) => row.__weekIso,
-      (row) => getDeepdiveLaCode(row) || "Unknown",
-      getDeepdiveCost
-    );
-    renderPivotTable(
-      "deepdive-weekly-la-code-table",
-      "Week",
-      weeklyBuckets,
-      weeklyByLaCode.dimensionValues,
-      weeklyByLaCode.valueMap,
-      { valueMode: "percentage_split", includeTotalColumn: false }
-    );
-
-    const dailyByMedia = buildPivotMatrix(
-      dailyRows,
-      (row) => row.__dayIso,
-      (row) => getDeepdiveMediaSource(row) || "Unknown",
-      getDeepdiveCost
-    );
-    renderPivotTable(
-      "deepdive-daily-media-source-table",
-      "Day",
-      dailyBuckets,
-      dailyByMedia.dimensionValues,
-      dailyByMedia.valueMap,
-      { valueMode: "percentage_split", includeTotalColumn: false }
-    );
+    const selectedDailyTableRows = deepdiveDailyShowwiseTablesByKey[selectedShowKey];
+    if (selectedDailyTableRows) {
+      renderTableWithHeaderRows("deepdive-daily-media-source-table", selectedDailyTableRows, 2);
+    } else {
+      renderTableWithHeaderRows("deepdive-daily-media-source-table", [], 2);
+    }
   }
 
   if (deepdiveShowSelect) {
     deepdiveShowSelect.addEventListener("change", renderIosDeepdiveTables);
     renderIosDeepdiveTables();
+    Promise.all([loadDeepdiveWeeklyShowwiseTablesByKey(), loadDeepdiveDailyShowwiseTablesByKey()])
+      .then(() => {
+        renderIosDeepdiveTables();
+      })
+      .catch((error) => {
+        console.warn("[Deepdive] Show-wise CSV load failed; deepdive tables will remain empty.", error);
+      });
   }
 
   const retentionShowSelect = document.getElementById("retention-show-select");
@@ -2450,6 +3281,16 @@ function init() {
   const retentionDebugCampaignCount = document.getElementById("retention-debug-campaign-count");
   const retentionDebugMatchingRows = document.getElementById("retention-debug-matching-rows");
   const benchmarkCpi = 19.49;
+
+  const retentionBenchmarkToggle = document.getElementById("retention-benchmark-toggle");
+  const retentionBenchmarkPanel = document.getElementById("retention-benchmark-panel");
+  if (retentionBenchmarkToggle && retentionBenchmarkPanel) {
+    retentionBenchmarkToggle.addEventListener("click", () => {
+      const hidden = retentionBenchmarkPanel.classList.toggle("benchmark-panel--hidden");
+      retentionBenchmarkToggle.setAttribute("aria-pressed", String(!hidden));
+      retentionBenchmarkToggle.textContent = hidden ? "Show benchmarks" : "Hide benchmarks";
+    });
+  }
 
   const showValues = uniqueSorted(rawDumpRows.map((row) => row.Show_Name));
   const platformValues = uniqueSorted(rawDumpRows.map((row) => row.Platform));
