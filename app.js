@@ -62,7 +62,7 @@ function renderTable() {
 
   const headers = allRows[0] || [];
   const bodyRows = allRows.slice(1);
-  const query = globalFilter.value.trim().toLowerCase();
+  const query = String(globalFilter?.value ?? "").trim().toLowerCase();
   const filtered = !query
     ? bodyRows
     : bodyRows.filter((row) => row.some((cell) => String(cell).toLowerCase().includes(query)));

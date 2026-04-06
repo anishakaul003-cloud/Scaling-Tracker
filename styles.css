@@ -203,6 +203,81 @@ h2 {
   line-height: 1.6;
 }
 
+.filter-column .retention-filters {
+  margin: 0;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.retention-filter-card {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 200px);
+  gap: var(--space-6);
+  padding: var(--space-5) calc(var(--space-5) * 1.25);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: var(--space-5);
+}
+
+.retention-benchmark-toggle-row {
+  margin-top: var(--space-3);
+  margin-bottom: var(--space-1);
+  text-align: left;
+}
+
+.benchmark-column {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-left: var(--space-3);
+}
+
+.benchmark-panel {
+  width: 100%;
+  max-width: 220px;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: #fbf8ec;
+  box-shadow: var(--shadow-sm);
+}
+
+.benchmark-panel--hidden {
+  display: none;
+}
+
+.benchmark-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.benchmark-table td {
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  font-size: 15px;
+  text-align: center;
+}
+
+.benchmark-title {
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: var(--space-2);
+}
+}
+
+.retention-benchmark-toggle-row {
+  margin-top: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.benchmark-panel--hidden {
+  display: none;
+}
+
 #ios-deepdive-tab .deepdive-summary {
   margin-bottom: var(--space-5);
   font-size: 18.24px;
@@ -318,6 +393,11 @@ h2 {
 #daily-table tbody td:nth-child(n + 3),
 #weekly-table thead th:nth-child(n + 3),
 #weekly-table tbody td:nth-child(n + 3) {
+  text-align: center;
+}
+
+#cpi-metrics-table thead th,
+#cpi-metrics-table tbody td {
   text-align: center;
 }
 
@@ -778,7 +858,11 @@ tbody tr:hover td {
   margin-top: var(--space-3);
 }
 
-.recoveries-controls .toggle-button {
+#show-wise-recoveries-tab .recoveries-main-table {
+  margin-bottom: var(--space-4);
+}
+
+.toggle-button {
   border: 1px solid rgba(120, 111, 75, 0.35);
   background: #fbf6e8;
   color: #364339;
@@ -786,11 +870,16 @@ tbody tr:hover td {
   padding: 8px 14px;
   font-weight: 600;
   transition: box-shadow 0.2s ease, transform 0.2s ease;
+  font-size: 16px;
 }
 
-.recoveries-controls .toggle-button:hover {
+.toggle-button:hover {
   box-shadow: 0 6px 16px rgba(60, 52, 23, 0.12);
   transform: translateY(-1px);
+}
+
+#show-wise-recoveries-tab .recoveries-secondary-table {
+  margin-top: var(--space-5);
 }
 
 #recoveries-table .recoveries-show-title {
@@ -835,10 +924,31 @@ tbody tr:hover td {
   display: none;
 }
 
+#recoveries-current-metrics-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#recoveries-current-metrics-table thead th,
+#recoveries-current-metrics-table tbody td {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+#recoveries-current-metrics-table thead th:first-child,
+#recoveries-current-metrics-table tbody td:first-child {
+  text-align: left;
+}
+
 #script-level-spends-table thead tr:first-child th {
   text-align: center;
   background: linear-gradient(180deg, rgba(239, 228, 196, 0.92) 0%, rgba(239, 228, 196, 0.6) 100%);
   font-size: 13.5px;
+}
+
+#script-level-spends-table .script-level-show-cell {
+  text-align: center;
+  vertical-align: middle;
 }
 
 #script-level-spends-table thead tr:first-child th:nth-child(-n + 2) {
@@ -942,4 +1052,69 @@ tbody tr:hover td {
     font-size: 12px;
     padding: 9px 10px;
   }
+}
+
+.app-loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(2px);
+}
+
+.app-loading-screen.is-hidden {
+  display: none;
+}
+
+.app-loading-card {
+  width: min(640px, 100%);
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: #0f172a;
+  box-shadow: 0 20px 48px rgba(2, 6, 23, 0.35);
+  color: #e2e8f0;
+  padding: 22px 20px;
+}
+
+.app-loading-title {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.app-loading-status {
+  margin: 0;
+  color: #cbd5e1;
+}
+
+.app-loading-error {
+  margin: 12px 0 0;
+  color: #fca5a5;
+  display: none;
+}
+
+.app-loading-error.is-visible {
+  display: block;
+}
+
+.app-loading-actions {
+  margin-top: 14px;
+}
+
+.app-loading-retry {
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  background: #1e293b;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.app-loading-retry:hover {
+  background: #334155;
 }

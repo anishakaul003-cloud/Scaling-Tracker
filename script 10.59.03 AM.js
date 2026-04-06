@@ -147,7 +147,7 @@ function interpolateColor(startColor, endColor, ratio) {
 }
 
 function getColumnMetricDirection(tableId, headerText) {
-  const normalizedHeader = headerText.toLowerCase().trim();
+  const normalizedHeader = String(headerText ?? "").toLowerCase().trim();
   const costEfficiencyMetrics = new Set(["cpi", "cpfw d7", "d15 cpfsw", "d30 cpfsw"]);
 
   if (costEfficiencyMetrics.has(normalizedHeader)) {
@@ -994,7 +994,7 @@ function parseSheetStyleDateToIso(dateText, fallbackYear) {
     nov: 10,
     dec: 11
   };
-  const month = monthMap[match[2].toLowerCase()];
+  const month = monthMap[String(match[2] ?? "").toLowerCase()];
   if (!Number.isFinite(day) || month === undefined) return "";
   const dateObj = new Date(fallbackYear, month, day);
   return toIsoDateString(toMidnightDate(dateObj));
@@ -1265,12 +1265,22 @@ function renderShowWiseRecoveriesEngineTable(tableId, rows) {
 }
 
 function uniqueSorted(values) {
-  return Array.from(new Set(values.filter((value) => value !== ""))).sort((a, b) => a.localeCompare(b));
+  const sanitized = values
+    .map((value) => String(value ?? "").trim())
+    .filter((value) => value !== "");
+  return Array.from(new Set(sanitized)).sort((a, b) => a.localeCompare(b));
 }
 
 function orderDayDiffValues(values) {
   const dayDiffOrder = ["d3", "d7", "d15", "d30"];
-  const normalized = Array.from(new Set(values.filter((value) => value !== "").map((value) => value.toLowerCase())));
+  const normalized = Array.from(
+    new Set(
+      values
+        .map((value) => String(value ?? "").trim())
+        .filter((value) => value !== "")
+        .map((value) => value.toLowerCase())
+    )
+  );
   const orderedKnown = dayDiffOrder.filter((dayDiff) => normalized.includes(dayDiff));
   const remaining = normalized.filter((value) => !dayDiffOrder.includes(value)).sort((a, b) => a.localeCompare(b));
   return [...orderedKnown, ...remaining];
