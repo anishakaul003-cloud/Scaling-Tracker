@@ -3282,16 +3282,6 @@ function init() {
   const retentionDebugMatchingRows = document.getElementById("retention-debug-matching-rows");
   const benchmarkCpi = 19.49;
 
-  const retentionBenchmarkToggle = document.getElementById("retention-benchmark-toggle");
-  const retentionBenchmarkPanel = document.getElementById("retention-benchmark-panel");
-  if (retentionBenchmarkToggle && retentionBenchmarkPanel) {
-    retentionBenchmarkToggle.addEventListener("click", () => {
-      const hidden = retentionBenchmarkPanel.classList.toggle("benchmark-panel--hidden");
-      retentionBenchmarkToggle.setAttribute("aria-pressed", String(!hidden));
-      retentionBenchmarkToggle.textContent = hidden ? "Show benchmarks" : "Hide benchmarks";
-    });
-  }
-
   const showValues = uniqueSorted(rawDumpRows.map((row) => row.Show_Name));
   const platformValues = uniqueSorted(rawDumpRows.map((row) => row.Platform));
   const mediaSourceValues = uniqueSorted(rawDumpRows.map((row) => row.Media_Source));
