@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import socket
 import subprocess
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
@@ -22,19 +23,20 @@ def _first_present(container: Dict[str, Any], *keys: str) -> Any:
     return None
 
 
-def _fetch_json(url: str, timeout_seconds: float = 60.0) -> Dict[str, Any]:
+def _fetch_json(url: str, timeout_seconds: float = 80.0) -> Dict[str, Any]:
+    errors = []
+
+    try:
+        return _fetch_json_via_curl(url, timeout_seconds)
+    except RuntimeError as curl_error:
+        errors.append(f"curl: {curl_error}")
+
     try:
         return _fetch_json_via_urllib(url, timeout_seconds)
     except RuntimeError as urllib_error:
-        should_try_curl = "Apps Script URL error:" in str(urllib_error)
-        if not should_try_curl:
-            raise
-        try:
-            return _fetch_json_via_curl(url, timeout_seconds)
-        except RuntimeError as curl_error:
-            raise RuntimeError(
-                f"{urllib_error}; curl fallback failed: {curl_error}"
-            ) from curl_error
+        errors.append(f"urllib: {urllib_error}")
+
+    raise RuntimeError("Apps Script fetch failed: " + " | ".join(errors))
 
 
 def _fetch_json_via_urllib(url: str, timeout_seconds: float) -> Dict[str, Any]:
@@ -44,6 +46,10 @@ def _fetch_json_via_urllib(url: str, timeout_seconds: float) -> Dict[str, Any]:
             raw_bytes = response.read()
     except HTTPError as exc:
         raise RuntimeError(f"Apps Script HTTP error {exc.code}") from exc
+    except TimeoutError as exc:
+        raise RuntimeError("Apps Script URL error: timed out") from exc
+    except socket.timeout as exc:
+        raise RuntimeError("Apps Script URL error: timed out") from exc
     except URLError as exc:
         raise RuntimeError(f"Apps Script URL error: {exc.reason}") from exc
 
@@ -64,6 +70,7 @@ def _fetch_json_via_urllib(url: str, timeout_seconds: float) -> Dict[str, Any]:
 
 def _fetch_json_via_curl(url: str, timeout_seconds: float) -> Dict[str, Any]:
     max_time = max(1, int(math.ceil(timeout_seconds)))
+    connect_timeout = max(5, min(20, int(max_time / 3) if max_time > 6 else max_time))
     try:
         completed = subprocess.run(
             [
@@ -71,6 +78,15 @@ def _fetch_json_via_curl(url: str, timeout_seconds: float) -> Dict[str, Any]:
                 "--silent",
                 "--show-error",
                 "--location",
+                "--compressed",
+                "--ipv4",
+                "--retry",
+                "1",
+                "--retry-all-errors",
+                "--retry-delay",
+                "1",
+                "--connect-timeout",
+                str(connect_timeout),
                 "--max-time",
                 str(max_time),
                 "--header",
@@ -101,6 +117,20 @@ def _fetch_json_via_curl(url: str, timeout_seconds: float) -> Dict[str, Any]:
     if not isinstance(parsed, dict):
         raise RuntimeError("Apps Script response root must be a JSON object")
     return parsed
+
+
+def _resolve_fetch_timeout_seconds(default_timeout: float = 80.0) -> float:
+    for env_key in ("APPS_SCRIPT_FETCH_TIMEOUT_SECONDS", "FETCH_TIMEOUT_SECONDS"):
+        raw_value = os.environ.get(env_key, "").strip()
+        if not raw_value:
+            continue
+        try:
+            parsed = float(raw_value)
+        except ValueError:
+            continue
+        if parsed > 0:
+            return parsed
+    return default_timeout
 
 
 def _normalize_remote_payload(remote_payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -231,6 +261,7 @@ def _normalize_remote_payload(remote_payload: Dict[str, Any]) -> Dict[str, Any]:
 
 def _refresh_live_data() -> Dict[str, Any]:
     apps_script_url = os.environ.get("APPS_SCRIPT_URL", "").strip()
+    timeout_seconds = _resolve_fetch_timeout_seconds()
     if not apps_script_url:
         return {
             "ok": False,
@@ -240,7 +271,7 @@ def _refresh_live_data() -> Dict[str, Any]:
         }
 
     try:
-        remote_payload = _fetch_json(apps_script_url, timeout_seconds=60.0)
+        remote_payload = _fetch_json(apps_script_url, timeout_seconds=timeout_seconds)
         normalized_payload = _normalize_remote_payload(remote_payload)
     except Exception as exc:  # noqa: BLE001
         return {
