@@ -2380,18 +2380,11 @@ function getDeepdiveCost(row) {
   return parseMetricNumber(row["Total Cost ($)"] ?? row.Cost);
 }
 
-const DEEPDIVE_WEEKLY_SHOWWISE_CSV_URL_BY_KEY = {
-  MVS: "./deepdive-weekly-mvs.csv",
-  FLBM: "./deepdive-weekly-flbm.csv",
-  WBT: "./deepdive-weekly-wbt.csv"
-};
-
-const DEEPDIVE_DAILY_SHOWWISE_CSV_URL = "./deepdive-daily-pivot.csv";
-
 let deepdiveWeeklyShowwiseTablesByKey = {};
 let deepdiveWeeklyShowwiseLoadPromise = null;
 let deepdiveDailyShowwiseTablesByKey = {};
 let deepdiveDailyShowwiseLoadPromise = null;
+const DEEPDIVE_DAILY_SHOWWISE_CSV_URL = "./deepdive-daily-pivot.csv";
 
 function getRuntimeDeepdiveWeeklyCsvTextByKey() {
   if (typeof window === "undefined") {
@@ -2521,7 +2514,7 @@ function parseDeepdiveWeeklyShowwiseCsv(csvText) {
     }
   }
 
-  if (mediaSourceRows.length === 0 || optimizationRows.length === 0 || laCodeRows.length === 0) {
+  if (optimizationRows.length === 0 || laCodeRows.length === 0) {
     return null;
   }
 
@@ -2561,38 +2554,11 @@ async function loadDeepdiveWeeklyShowwiseTablesByKey() {
         return runtimeLoadedByKey;
       }
       console.warn(
-        "[Deepdive] Runtime deepdiveWeeklyCsvTextByKey is present but no valid show tables were parsed; falling back to static CSV files."
+        "[Deepdive] Runtime deepdiveWeeklyCsvTextByKey is present but no valid show tables were parsed."
       );
     }
-
-    const loadedDataByKey = {};
-    const cacheBust = Date.now();
-
-    await Promise.all(
-      Object.entries(DEEPDIVE_WEEKLY_SHOWWISE_CSV_URL_BY_KEY).map(async ([showKey, csvUrl]) => {
-        try {
-          const response = await fetch(`${csvUrl}?cacheBust=${cacheBust}`, {
-            method: "GET",
-            cache: "no-store"
-          });
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-          }
-
-          const csvText = await response.text();
-          const parsed = parseDeepdiveWeeklyShowwiseCsv(csvText);
-          if (!parsed) {
-            throw new Error("CSV structure mismatch");
-          }
-          loadedDataByKey[showKey] = parsed;
-        } catch (error) {
-          console.warn(`[Deepdive] Could not load weekly CSV for ${showKey}:`, error);
-        }
-      })
-    );
-
-    deepdiveWeeklyShowwiseTablesByKey = loadedDataByKey;
-    return loadedDataByKey;
+    deepdiveWeeklyShowwiseTablesByKey = {};
+    return deepdiveWeeklyShowwiseTablesByKey;
   })();
 
   return deepdiveWeeklyShowwiseLoadPromise;
@@ -3233,7 +3199,6 @@ function init() {
 
     const selectedShowTables = deepdiveWeeklyShowwiseTablesByKey[selectedShowKey];
     if (selectedShowTables) {
-      renderTableWithHeaderRows("deepdive-weekly-media-source-table", selectedShowTables.mediaSourceRows, 1);
       renderTableWithHeaderRows("deepdive-weekly-optimization-table", selectedShowTables.optimizationRows, 1);
       renderTableWithHeaderRows("deepdive-weekly-la-code-table", selectedShowTables.laCodeRows, 1);
       renderTableWithHeaderRows(
@@ -3242,24 +3207,16 @@ function init() {
         3
       );
     } else {
-      renderTableWithHeaderRows("deepdive-weekly-media-source-table", [], 1);
       renderTableWithHeaderRows("deepdive-weekly-optimization-table", [], 1);
       renderTableWithHeaderRows("deepdive-weekly-la-code-table", [], 1);
       renderTableWithHeaderRows("deepdive-weekly-media-source-la-code-table", [], 3);
-    }
-
-    const selectedDailyTableRows = deepdiveDailyShowwiseTablesByKey[selectedShowKey];
-    if (selectedDailyTableRows) {
-      renderTableWithHeaderRows("deepdive-daily-media-source-table", selectedDailyTableRows, 2);
-    } else {
-      renderTableWithHeaderRows("deepdive-daily-media-source-table", [], 2);
     }
   }
 
   if (deepdiveShowSelect) {
     deepdiveShowSelect.addEventListener("change", renderIosDeepdiveTables);
     renderIosDeepdiveTables();
-    Promise.all([loadDeepdiveWeeklyShowwiseTablesByKey(), loadDeepdiveDailyShowwiseTablesByKey()])
+    Promise.all([loadDeepdiveWeeklyShowwiseTablesByKey()])
       .then(() => {
         renderIosDeepdiveTables();
       })

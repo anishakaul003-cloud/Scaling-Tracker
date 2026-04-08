@@ -349,15 +349,14 @@ h2 {
   gap: var(--space-5);
 }
 
-.deepdive-card-3,
-.deepdive-card-4 {
+.deepdive-card-media-source-la {
   grid-column: 1 / -1;
 }
 
-.deepdive-card-1 th,
-.deepdive-card-1 td,
-.deepdive-card-2 th,
-.deepdive-card-2 td {
+.deepdive-card-optimization th,
+.deepdive-card-optimization td,
+.deepdive-card-la-code th,
+.deepdive-card-la-code td {
   padding: 8px 9px;
   font-size: 12px;
 }
@@ -376,16 +375,6 @@ h2 {
 
 #ios-deepdive-tab table thead th:first-child,
 #ios-deepdive-tab table tbody td:first-child {
-  text-align: left;
-}
-
-#deepdive-daily-media-source-table thead th:not(:first-child),
-#deepdive-daily-media-source-table tbody td:not(:first-child) {
-  text-align: center;
-}
-
-#deepdive-daily-media-source-table thead th:first-child,
-#deepdive-daily-media-source-table tbody td:first-child {
   text-align: left;
 }
 

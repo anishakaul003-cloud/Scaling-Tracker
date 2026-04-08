@@ -63,8 +63,7 @@
       <section id="ios-deepdive-tab" class="tab-panel" aria-labelledby="ios-deepdive-tab-title">
         <p class="performance-summary deepdive-summary">
           This dashboard helps deep-dive into iOS spend distribution for US Fantasy growth shows to identify potential
-          performance issues. Check weekly spend splits across media sources, optimization, LA codes, and media source
-          x LA code cuts, along with a daily media source spend breakdown.
+          performance issues. Check weekly spend splits across optimization, LA codes, and media source x LA code cuts.
         </p>
         <div class="filter-row performance-controls">
           <label for="deepdive-show-select">Show Name</label>
@@ -78,25 +77,19 @@
         <section class="table-section" aria-labelledby="weekly-deepdive-title">
           <h2 id="weekly-deepdive-title">Weekly Deepdive</h2>
           <div class="deepdive-grid">
-            <div class="deepdive-card deepdive-card-1">
-              <h3>Weekly Spends by Media Source</h3>
-              <div class="table-wrapper">
-                <table id="deepdive-weekly-media-source-table" aria-label="Weekly spends by media source"></table>
-              </div>
-            </div>
-            <div class="deepdive-card deepdive-card-2">
+            <div class="deepdive-card deepdive-card-optimization">
               <h3>Weekly Spends by Optimization</h3>
               <div class="table-wrapper">
                 <table id="deepdive-weekly-optimization-table" aria-label="Weekly spends by optimization"></table>
               </div>
             </div>
-            <div class="deepdive-card deepdive-card-3">
+            <div class="deepdive-card deepdive-card-la-code">
               <h3>Weekly Spends by LA Code</h3>
               <div class="table-wrapper">
                 <table id="deepdive-weekly-la-code-table" aria-label="Weekly spends by la code"></table>
               </div>
             </div>
-            <div class="deepdive-card deepdive-card-4">
+            <div class="deepdive-card deepdive-card-media-source-la">
               <h3>Weekly Spends by Media Source x LA Code</h3>
               <div class="table-wrapper">
                 <table
@@ -105,14 +98,6 @@
                 ></table>
               </div>
             </div>
-          </div>
-        </section>
-
-        <section class="table-section" aria-labelledby="daily-deepdive-title">
-          <h2 id="daily-deepdive-title">Daily Deepdive</h2>
-          <h3>Daily Spends by Media Source</h3>
-          <div class="table-wrapper">
-            <table id="deepdive-daily-media-source-table" aria-label="Daily spends by media source"></table>
           </div>
         </section>
       </section>
