@@ -605,9 +605,14 @@ function renderRawGridTableElement(table, rows, options = {}) {
       "Weakest Beast Tamer",
       "The Mech Touch",
       "Princess Ebony & the Silver Dragon - Remastered Edition",
-      "Other Shows / Others"
+      "Other Shows / Others",
+      "Other Shows",
+      "Others"
     ].map((label) => normalizeString(label))
   );
+  const isPrincessEbonyLabel = (normalizedCell) =>
+    normalizedCell.startsWith("princess ebony & the silver dragon") &&
+    normalizedCell.includes("remastered edition");
 
   let spendsSectionIndex = 1;
 
@@ -856,7 +861,7 @@ function renderRawGridTableElement(table, rows, options = {}) {
           }
           if (
             (table.classList.contains("spends-table-2") || table.classList.contains("spends-table-3")) &&
-            spendsShowNameBoldLabelSet.has(normalizedCell)
+            (spendsShowNameBoldLabelSet.has(normalizedCell) || isPrincessEbonyLabel(normalizedCell))
           ) {
             td.classList.add("spends-show-name-force-bold");
           }
@@ -2033,7 +2038,13 @@ function renderShowWiseRecoveriesEngineTable(tableId, computed) {
   const headerRow3 = document.createElement("tr");
   blockHeaders.forEach((header, index) => {
     const th = document.createElement("th");
-    th.textContent = header;
+    const normalizedHeader = normalizeString(header);
+    if (normalizedHeader === "payback d15 cpnssw") {
+      th.textContent = "Payback D15\nCPNSSW";
+      th.classList.add("recoveries-header-payback-d15-cpnssw");
+    } else {
+      th.textContent = header;
+    }
     if (index === 0) th.classList.add("metric-primary");
     headerRow3.appendChild(th);
   });

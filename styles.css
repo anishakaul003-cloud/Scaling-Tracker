@@ -951,6 +951,12 @@ tbody tr:hover td {
   text-align: center;
 }
 
+#recoveries-table thead th.recoveries-header-payback-d15-cpnssw {
+  white-space: pre-line;
+  min-width: 92px;
+  line-height: 1.15;
+}
+
 #recoveries-table.hide-recoveries-columns th:nth-child(7),
 #recoveries-table.hide-recoveries-columns td:nth-child(7),
 #recoveries-table.hide-recoveries-columns th:nth-child(8),
