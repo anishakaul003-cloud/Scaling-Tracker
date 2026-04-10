@@ -234,6 +234,118 @@ function renderTableWithHeaderRows(tableId, rows, headerRowCount = 1) {
   }
 }
 
+function renderTableWithMergedGroupHeaderRow(tableId, rows, options = {}) {
+  const table = document.getElementById(tableId);
+  if (!table) {
+    return;
+  }
+  table.textContent = "";
+
+  if (!rows || rows.length === 0) {
+    return;
+  }
+
+  const normalizedRows = rows
+    .map((row) => trimTrailingEmptyCells((row || []).map((cell) => String(cell ?? ""))))
+    .filter((row) => row.length > 0);
+  if (normalizedRows.length === 0) {
+    return;
+  }
+
+  const columnCount = Math.max(...normalizedRows.map((row) => row.length));
+  const paddedRows = normalizedRows.map((row) => {
+    if (row.length >= columnCount) {
+      return row;
+    }
+    return [...row, ...Array(columnCount - row.length).fill("")];
+  });
+
+  const requestedHeaderRowCount = Number(options.headerRowCount ?? 1);
+  const safeHeaderRowCount = Math.max(0, Math.min(requestedHeaderRowCount, paddedRows.length));
+  const requestedGroupHeaderRowIndex = Number(options.groupHeaderRowIndex ?? 1);
+  const groupHeaderRowIndex = Math.max(0, Math.min(requestedGroupHeaderRowIndex, safeHeaderRowCount - 1));
+  const leafHeaderRowIndex = safeHeaderRowCount - 1;
+
+  if (safeHeaderRowCount > 0) {
+    const thead = document.createElement("thead");
+
+    paddedRows.slice(0, safeHeaderRowCount).forEach((rowCells, rowIndex) => {
+      const tr = document.createElement("tr");
+
+      if (rowIndex !== groupHeaderRowIndex) {
+        rowCells.forEach((value, columnIndex) => {
+          const th = document.createElement("th");
+          th.textContent = value;
+          if (rowIndex === leafHeaderRowIndex && columnIndex === 0) {
+            th.classList.add("metric-primary");
+          }
+          tr.appendChild(th);
+        });
+        thead.appendChild(tr);
+        return;
+      }
+
+      for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+        const currentValue = rowCells[columnIndex] || "";
+        const currentNormalized = normalizeString(currentValue);
+
+        if (columnIndex > 0 && currentNormalized === "") {
+          continue;
+        }
+
+        const th = document.createElement("th");
+        th.textContent = currentValue;
+
+        let colspan = 1;
+        if (columnIndex > 0 && currentNormalized !== "") {
+          for (let nextIndex = columnIndex + 1; nextIndex < columnCount; nextIndex += 1) {
+            const nextGroupValue = normalizeString(rowCells[nextIndex] || "");
+            const nextLeafValue = normalizeString((paddedRows[leafHeaderRowIndex] || [])[nextIndex] || "");
+            if (nextGroupValue !== "" || nextLeafValue === "") {
+              break;
+            }
+            colspan += 1;
+          }
+        }
+
+        if (colspan > 1) {
+          th.colSpan = colspan;
+          columnIndex += colspan - 1;
+        }
+        tr.appendChild(th);
+      }
+
+      thead.appendChild(tr);
+    });
+
+    table.appendChild(thead);
+  }
+
+  const bodyRows = paddedRows.slice(safeHeaderRowCount);
+  if (bodyRows.length === 0) {
+    return;
+  }
+
+  const tbody = document.createElement("tbody");
+  bodyRows.forEach((rowCells) => {
+    const tr = document.createElement("tr");
+    rowCells.forEach((value, columnIndex) => {
+      const td = document.createElement("td");
+      td.textContent = value;
+      if (columnIndex === 0) {
+        td.classList.add("metric-primary");
+      }
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+
+  if (tableId.startsWith("deepdive-")) {
+    applyDeepdiveConditionalFormatting(table);
+  }
+}
+
 function parseScaleNumber(value) {
   if (value === null || value === undefined) {
     return NaN;
@@ -257,7 +369,14 @@ function interpolateColor(startColor, endColor, ratio) {
 
 function getColumnMetricDirection(tableId, headerText) {
   const normalizedHeader = String(headerText ?? "").toLowerCase().trim();
-  const costEfficiencyMetrics = new Set(["cpi", "cpfw d7", "d15 cpfsw", "d30 cpfsw"]);
+  const costEfficiencyMetrics = new Set([
+    "cpi",
+    "cpfw d7",
+    "d15 cpfsw",
+    "d30 cpfsw",
+    "d15 cpnssw",
+    "d30 cpnssw"
+  ]);
 
   if (tableId === "cpi-metrics-table") {
     const cpiLowerBetterMetrics = new Set([
@@ -312,6 +431,8 @@ function getColumnMetricDirection(tableId, headerText) {
     "recovery d7",
     "ss d7h10",
     "ssd7h10",
+    "ss d15h20",
+    "ssd15h20",
     "meta spends (%)",
     "uac spends (%)",
     "tiktok spends (%)",
@@ -3201,15 +3322,21 @@ function init() {
     if (selectedShowTables) {
       renderTableWithHeaderRows("deepdive-weekly-optimization-table", selectedShowTables.optimizationRows, 1);
       renderTableWithHeaderRows("deepdive-weekly-la-code-table", selectedShowTables.laCodeRows, 1);
-      renderTableWithHeaderRows(
+      renderTableWithMergedGroupHeaderRow(
         "deepdive-weekly-media-source-la-code-table",
         selectedShowTables.mediaSourceLaCodeRows,
-        3
+        {
+          headerRowCount: 3,
+          groupHeaderRowIndex: 1
+        }
       );
     } else {
       renderTableWithHeaderRows("deepdive-weekly-optimization-table", [], 1);
       renderTableWithHeaderRows("deepdive-weekly-la-code-table", [], 1);
-      renderTableWithHeaderRows("deepdive-weekly-media-source-la-code-table", [], 3);
+      renderTableWithMergedGroupHeaderRow("deepdive-weekly-media-source-la-code-table", [], {
+        headerRowCount: 3,
+        groupHeaderRowIndex: 1
+      });
     }
   }
 
