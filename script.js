@@ -580,6 +580,25 @@ function renderRawGridTableElement(table, rows, options = {}) {
   };
 
   const boldRowNumbers = options.boldRowNumbers || null;
+  const spendsTableOneExactBoldLabelSet = new Set(
+    ["MTD Spends (D-2)", "DRR (D-2)", "Planned DRR"].map((label) => normalizeString(label))
+  );
+  const isSpendsTableOneLabelToBold = (normalizedCell) =>
+    spendsTableOneExactBoldLabelSet.has(normalizedCell) ||
+    /^mtd planned spends \([^)]+\)$/.test(normalizedCell) ||
+    /^spends plan \([^)]+\)$/.test(normalizedCell);
+  const spendsShowNameBoldLabelSet = new Set(
+    [
+      "My Vampire System",
+      "First Legendary Beast Master",
+      "Shadow Slave",
+      "Soul of a warrior",
+      "Weakest Beast Tamer",
+      "The Mech Touch",
+      "Princess Ebony & the Silver Dragon - Remastered Edition",
+      "Other Shows / Others"
+    ].map((label) => normalizeString(label))
+  );
 
   let spendsSectionIndex = 1;
 
@@ -821,6 +840,18 @@ function renderRawGridTableElement(table, rows, options = {}) {
         if (i === 0 || (i === 1 && row[0] === "")) {
           td.classList.add("metric-primary");
         }
+        if (i === 0) {
+          const normalizedCell = normalizeString(cellValue);
+          if (table.classList.contains("spends-table-1") && isSpendsTableOneLabelToBold(normalizedCell)) {
+            td.classList.add("spends-label-force-bold");
+          }
+          if (
+            (table.classList.contains("spends-table-2") || table.classList.contains("spends-table-3")) &&
+            spendsShowNameBoldLabelSet.has(normalizedCell)
+          ) {
+            td.classList.add("spends-show-name-force-bold");
+          }
+        }
         if (!isAnySpendsHeaderRow && i > 0) {
           td.classList.add("spends-data-cell");
         }
@@ -989,6 +1020,7 @@ function renderScriptLevelSpendsTable(tableId, rows) {
 
     const scriptNameCell = document.createElement("td");
     scriptNameCell.textContent = row.scriptName;
+    scriptNameCell.classList.add("script-level-script-cell");
     tr.appendChild(scriptNameCell);
 
     [row.androidMeta, row.androidUac, row.androidTiktok, row.iosMeta, row.iosUac, row.iosTiktok, row.total].forEach((value) => {
