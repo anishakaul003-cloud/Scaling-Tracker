@@ -596,6 +596,11 @@ function renderRawGridTableElement(table, rows, options = {}) {
     spendsTableOneExactBoldLabelSet.has(normalizedCell) ||
     /^mtd planned spends \([^)]+\)$/.test(normalizedCell) ||
     /^spends plan \([^)]+\)$/.test(normalizedCell);
+  const normalizeShowNameForBold = (value) =>
+    normalizeString(value)
+      .replace(/[–—]/g, "-")
+      .replace(/\s+/g, " ")
+      .trim();
   const spendsShowNameBoldLabelSet = new Set(
     [
       "My Vampire System",
@@ -608,11 +613,10 @@ function renderRawGridTableElement(table, rows, options = {}) {
       "Other Shows / Others",
       "Other Shows",
       "Others"
-    ].map((label) => normalizeString(label))
+    ].map((label) => normalizeShowNameForBold(label))
   );
-  const isPrincessEbonyLabel = (normalizedCell) =>
-    normalizedCell.startsWith("princess ebony & the silver dragon") &&
-    normalizedCell.includes("remastered edition");
+  const isPrincessEbonyLabel = (normalizedCellForBold) =>
+    /princess ebony .* silver dragon .* remastered edition/.test(normalizedCellForBold);
 
   let spendsSectionIndex = 1;
 
@@ -854,14 +858,15 @@ function renderRawGridTableElement(table, rows, options = {}) {
         if (i === 0 || (i === 1 && row[0] === "")) {
           td.classList.add("metric-primary");
         }
-        if (i === 0) {
+        if (i === 0 || (i === 1 && normalizeString(row[0] || "") === "")) {
           const normalizedCell = normalizeString(cellValue);
+          const normalizedCellForBold = normalizeShowNameForBold(cellValue);
           if (table.classList.contains("spends-table-1") && isSpendsTableOneLabelToBold(normalizedCell)) {
             td.classList.add("spends-label-force-bold");
           }
           if (
             (table.classList.contains("spends-table-2") || table.classList.contains("spends-table-3")) &&
-            (spendsShowNameBoldLabelSet.has(normalizedCell) || isPrincessEbonyLabel(normalizedCell))
+            (spendsShowNameBoldLabelSet.has(normalizedCellForBold) || isPrincessEbonyLabel(normalizedCellForBold))
           ) {
             td.classList.add("spends-show-name-force-bold");
           }
