@@ -583,6 +583,15 @@ function renderRawGridTableElement(table, rows, options = {}) {
   const spendsTableOneExactBoldLabelSet = new Set(
     ["MTD Spends (D-2)", "DRR (D-2)", "Planned DRR"].map((label) => normalizeString(label))
   );
+  const spendsTableOneHeaderBoldLabelSet = new Set(
+    [
+      "MTD Spends (D-2)",
+      "MTD Planned Spends (April)",
+      "Spends Plan (April)",
+      "DRR (D-2)",
+      "Planned DRR"
+    ].map((label) => normalizeString(label))
+  );
   const isSpendsTableOneLabelToBold = (normalizedCell) =>
     spendsTableOneExactBoldLabelSet.has(normalizedCell) ||
     /^mtd planned spends \([^)]+\)$/.test(normalizedCell) ||
@@ -854,6 +863,16 @@ function renderRawGridTableElement(table, rows, options = {}) {
         }
         if (!isAnySpendsHeaderRow && i > 0) {
           td.classList.add("spends-data-cell");
+        }
+        if (table.classList.contains("spends-table-1")) {
+          const normalizedCell = normalizeString(cellValue);
+          const isHeaderLabelMatch =
+            spendsTableOneHeaderBoldLabelSet.has(normalizedCell) ||
+            /^mtd planned spends \([^)]+\)$/.test(normalizedCell) ||
+            /^spends plan \([^)]+\)$/.test(normalizedCell);
+          if (isHeaderLabelMatch) {
+            td.classList.add("spends-header-label-force-bold");
+          }
         }
         if (channelHeaderTokens.has(normalizeString(cellValue))) {
           td.classList.add("spends-channel-title");
@@ -1489,6 +1508,12 @@ function isExcludedSubTeam(value, selectedSubTeam) {
   if (selectedSubTeam === "__exclude_reengagement_affiliates__") {
     return normalized === "re-engagement" || normalized === "affiliates";
   }
+  if (selectedSubTeam === "__exclude_reengagement__") {
+    return normalized === "re-engagement";
+  }
+  if (selectedSubTeam === "__exclude_affiliates__") {
+    return normalized === "affiliates";
+  }
   return normalizeString(selectedSubTeam) !== "all" && normalizeString(selectedSubTeam) !== normalized;
 }
 
@@ -1928,7 +1953,7 @@ function renderShowWiseRecoveriesEngineTable(tableId, computed) {
     11 + // Block1
     11 + // Block2
     6 + // Block3
-    4; // Block4
+    3; // Block4
 
   const buildFallbackTopRow = () => {
     const cells = Array(totalColumns).fill("");
@@ -1949,8 +1974,8 @@ function renderShowWiseRecoveriesEngineTable(tableId, computed) {
       if (i === 23 + 5) cells[i] = formatDateLabel(dates.af10);
 
       if (i === 29) cells[i] = "Week of >";
-      if (i === 29 + 2) cells[i] = formatDateLabel(dates.ai10);
-      if (i === 29 + 3) cells[i] = formatDateLabel(dates.aj10);
+      if (i === 29 + 1) cells[i] = formatDateLabel(dates.ai10);
+      if (i === 29 + 2) cells[i] = formatDateLabel(dates.aj10);
     }
     return cells;
   };
@@ -2002,8 +2027,7 @@ function renderShowWiseRecoveriesEngineTable(tableId, computed) {
     "Payback D7",
     "D3",
     "Cost",
-    "CPI",
-    "Potential Payback"
+    "CPI"
   ];
 
   const headerRow3 = document.createElement("tr");
@@ -2113,8 +2137,7 @@ function renderShowWiseRecoveriesEngineTable(tableId, computed) {
       formatNumber(row.block3.paybackD7, 1),
       formatPctRatio(row.block4.d3),
       formatNumber(row.block4.cost),
-      formatNumber(row.block4.cpi, 1),
-      row.block4.potentialPayback
+      formatNumber(row.block4.cpi, 1)
     ];
 
     const secondaryValues = [
@@ -3226,19 +3249,28 @@ function init() {
     layoutWeekBoundaries
   );
 
-  const recoveriesRefreshDateSelect = document.getElementById("recoveries-refresh-date-select");
+  const recoveriesRefreshDateInput = document.getElementById("recoveries-refresh-date-select");
   const recoveriesShowSelect = document.getElementById("recoveries-show-select");
   const recoveriesSubTeamSelect = document.getElementById("recoveries-sub-team-select");
   const recoveriesLanguageSelect = document.getElementById("recoveries-language-select");
   const recoveriesToggleColumns = document.getElementById("recoveries-toggle-columns");
   const recoveriesTable = document.getElementById("recoveries-table");
 
-  recoveriesEngine.refreshDates.forEach((refreshDate) => {
-    const option = document.createElement("option");
-    option.value = refreshDate;
-    option.textContent = formatDateLabel(parseIsoDate(refreshDate));
-    recoveriesRefreshDateSelect.appendChild(option);
-  });
+  const getRecoveriesRefreshDateIso = () =>
+    recoveriesRefreshDateInput?.dataset.isoValue || recoveriesEngine.refreshDates[0] || "";
+
+  const setRecoveriesRefreshDateIso = (refreshIso) => {
+    const nextIso = recoveriesEngine.refreshDates.includes(refreshIso)
+      ? refreshIso
+      : recoveriesEngine.refreshDates[0] || "";
+    if (!recoveriesRefreshDateInput) {
+      return;
+    }
+    recoveriesRefreshDateInput.dataset.isoValue = nextIso;
+    const parsedDate = parseIsoDate(nextIso);
+    recoveriesRefreshDateInput.value = parsedDate ? formatDateLabel(parsedDate) : "";
+  };
+  setRecoveriesRefreshDateIso(recoveriesEngine.refreshDates[0] || "");
 
   recoveriesEngine.shows.forEach((showName) => {
     const option = document.createElement("option");
@@ -3251,6 +3283,14 @@ function init() {
   defaultSubTeamOption.value = "__exclude_reengagement_affiliates__";
   defaultSubTeamOption.textContent = "Exclude Re-engagement, Affiliates";
   recoveriesSubTeamSelect.appendChild(defaultSubTeamOption);
+  const excludeReEngagementOption = document.createElement("option");
+  excludeReEngagementOption.value = "__exclude_reengagement__";
+  excludeReEngagementOption.textContent = "Exclude Re-engagement";
+  recoveriesSubTeamSelect.appendChild(excludeReEngagementOption);
+  const excludeAffiliatesOption = document.createElement("option");
+  excludeAffiliatesOption.value = "__exclude_affiliates__";
+  excludeAffiliatesOption.textContent = "Exclude Affiliates";
+  recoveriesSubTeamSelect.appendChild(excludeAffiliatesOption);
   const allSubTeamsOption = document.createElement("option");
   allSubTeamsOption.value = "all";
   allSubTeamsOption.textContent = "All";
@@ -3263,20 +3303,14 @@ function init() {
   });
   recoveriesSubTeamSelect.value = "__exclude_reengagement_affiliates__";
 
-  const defaultLanguageOption = document.createElement("option");
-  defaultLanguageOption.value = "__exclude_spanish__";
-  defaultLanguageOption.textContent = "Exclude Spanish";
-  recoveriesLanguageSelect.appendChild(defaultLanguageOption);
   const allLanguagesOption = document.createElement("option");
   allLanguagesOption.value = "all";
   allLanguagesOption.textContent = "All";
   recoveriesLanguageSelect.appendChild(allLanguagesOption);
-  recoveriesEngine.languages.forEach((language) => {
-    const option = document.createElement("option");
-    option.value = language;
-    option.textContent = language;
-    recoveriesLanguageSelect.appendChild(option);
-  });
+  const defaultLanguageOption = document.createElement("option");
+  defaultLanguageOption.value = "__exclude_spanish__";
+  defaultLanguageOption.textContent = "Exclude Spanish";
+  recoveriesLanguageSelect.appendChild(defaultLanguageOption);
   recoveriesLanguageSelect.value = "__exclude_spanish__";
 
   if (recoveriesTable) {
@@ -3295,7 +3329,7 @@ function init() {
   layoutWeekBoundaries.splice(0, layoutWeekBoundaries.length, ...parsedWeekBoundaries);
   const layoutRefreshIso = parseSheetStyleDateToIso(recoveriesLayoutGrid.cellMap.get("D1"), latestRefreshYear);
   if (layoutRefreshIso && recoveriesEngine.refreshDates.includes(layoutRefreshIso)) {
-    recoveriesRefreshDateSelect.value = layoutRefreshIso;
+    setRecoveriesRefreshDateIso(layoutRefreshIso);
   }
   const layoutShow = (recoveriesLayoutGrid.cellMap.get("D5") || "").trim();
   if (layoutShow && recoveriesEngine.shows.includes(layoutShow)) {
@@ -3312,7 +3346,7 @@ function init() {
 
   function renderShowWiseRecoveriesDashboard() {
     const filters = {
-      refreshDate: recoveriesRefreshDateSelect.value || recoveriesEngine.refreshDates[0] || "",
+      refreshDate: getRecoveriesRefreshDateIso(),
       show: recoveriesShowSelect.value || recoveriesEngine.shows[0] || "",
       subTeam: recoveriesSubTeamSelect.value || "__exclude_reengagement_affiliates__",
       language: recoveriesLanguageSelect.value || "__exclude_spanish__"
@@ -3330,7 +3364,6 @@ function init() {
     console.debug("[ShowWiseRecoveries][Validation] FilteredRowCounts base=", baseFilteredCount, "cost=", costFilteredCount);
   }
 
-  recoveriesRefreshDateSelect.addEventListener("change", renderShowWiseRecoveriesDashboard);
   recoveriesShowSelect.addEventListener("change", renderShowWiseRecoveriesDashboard);
   recoveriesSubTeamSelect.addEventListener("change", renderShowWiseRecoveriesDashboard);
   recoveriesLanguageSelect.addEventListener("change", renderShowWiseRecoveriesDashboard);
