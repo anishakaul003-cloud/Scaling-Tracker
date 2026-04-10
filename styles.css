@@ -636,6 +636,11 @@ td {
   font-weight: 400 !important;
 }
 
+.spends-plan-table.spends-table-2 tbody tr.row-force-bold td.spends-show-name-force-bold,
+.spends-plan-table.spends-table-3 tbody tr.row-force-bold td.spends-show-name-force-bold {
+  font-weight: 700 !important;
+}
+
 .spends-plan-table.spends-table-2 tbody tr.row-total td,
 .spends-plan-table.spends-table-3 tbody tr.row-total td {
   font-weight: 400 !important;
