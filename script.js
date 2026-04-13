@@ -2178,10 +2178,10 @@ function renderShowWiseRecoveriesEngineTable(tableId, computed) {
     });
 
     // Business rule: within iOS sub-segments, keep only Cost cells for Facebook/Google/Tik Tok.
+    const normalizedSegmentName = normalizeString(segmentName);
     const isIosSubsegment =
-      row.indentLevel &&
       normalizeString(activePlatform) === "ios" &&
-      new Set(["facebook", "google", "tik tok", "tiktok"]).has(normalizeString(segmentName));
+      new Set(["facebook", "google", "tik tok", "tiktok"]).has(normalizedSegmentName);
     if (isIosSubsegment) {
       const costColumnIndexes = new Set([4, 15, 25, 30]);
       for (let index = 1; index < mainValues.length; index += 1) {
@@ -2199,6 +2199,11 @@ function renderShowWiseRecoveriesEngineTable(tableId, computed) {
         secondaryValues[index] = "";
       }
     });
+
+    // Business rule: in the secondary recoveries table, keep iOS Facebook/Google/Tik Tok CPI fixed at 0.
+    if (isIosSubsegment) {
+      secondaryValues[2] = "0";
+    }
 
     const tr = document.createElement("tr");
     mainValues.forEach((value, index) => {
