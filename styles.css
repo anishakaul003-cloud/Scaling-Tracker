@@ -974,6 +974,16 @@ tbody tr:hover td {
   border-right: 2px solid rgba(39, 47, 41, 0.32);
 }
 
+/* Strong visual separators between weekly column groups (full table height). */
+#recoveries-table th:nth-child(12),
+#recoveries-table td:nth-child(12),
+#recoveries-table th:nth-child(23),
+#recoveries-table td:nth-child(23),
+#recoveries-table th:nth-child(29),
+#recoveries-table td:nth-child(29) {
+  border-right: 2px solid rgba(39, 47, 41, 0.34);
+}
+
 #recoveries-table.hide-recoveries-columns th:nth-child(7),
 #recoveries-table.hide-recoveries-columns td:nth-child(7),
 #recoveries-table.hide-recoveries-columns th:nth-child(8),
