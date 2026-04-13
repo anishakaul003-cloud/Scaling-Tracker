@@ -970,44 +970,6 @@ tbody tr:hover td {
   background: #f4edc8;
 }
 
-#recoveries-table thead th.recoveries-header-band-boundary {
-  border-right: 2px solid rgba(39, 47, 41, 0.32);
-}
-
-/* Strong visual separators between weekly column groups (full table height). */
-#recoveries-table:not(.hide-recoveries-columns) th:nth-child(12),
-#recoveries-table:not(.hide-recoveries-columns) td:nth-child(12),
-#recoveries-table:not(.hide-recoveries-columns) th:nth-child(23),
-#recoveries-table:not(.hide-recoveries-columns) td:nth-child(23),
-#recoveries-table:not(.hide-recoveries-columns) th:nth-child(29),
-#recoveries-table:not(.hide-recoveries-columns) td:nth-child(29) {
-  border-right: 2px solid rgba(39, 47, 41, 0.34);
-}
-
-/* In hidden-columns mode, group boundaries shift after hidden metric columns. */
-#recoveries-table.hide-recoveries-columns th:nth-child(11),
-#recoveries-table.hide-recoveries-columns td:nth-child(11),
-#recoveries-table.hide-recoveries-columns th:nth-child(22),
-#recoveries-table.hide-recoveries-columns td:nth-child(22),
-#recoveries-table.hide-recoveries-columns th:nth-child(29),
-#recoveries-table.hide-recoveries-columns td:nth-child(29) {
-  border-right: 2px solid rgba(39, 47, 41, 0.34);
-}
-
-/* Strong horizontal separators after row 1 and row 2 in both recoveries tables. */
-#recoveries-table tbody tr:nth-child(1) td,
-#recoveries-table tbody tr:nth-child(2) td,
-#recoveries-current-metrics-table tbody tr:nth-child(1) td,
-#recoveries-current-metrics-table tbody tr:nth-child(2) td {
-  border-bottom: 2px solid rgba(39, 47, 41, 0.34);
-}
-
-/* Strong outer boundary for both recoveries tables. */
-#recoveries-table,
-#recoveries-current-metrics-table {
-  border: 2px solid rgba(39, 47, 41, 0.34);
-}
-
 #recoveries-table.hide-recoveries-columns th:nth-child(7),
 #recoveries-table.hide-recoveries-columns td:nth-child(7),
 #recoveries-table.hide-recoveries-columns th:nth-child(8),
