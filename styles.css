@@ -975,22 +975,22 @@ tbody tr:hover td {
 }
 
 /* Strong visual separators between weekly column groups (full table height). */
-#recoveries-table th:nth-child(12),
-#recoveries-table td:nth-child(12),
-#recoveries-table th:nth-child(23),
-#recoveries-table td:nth-child(23),
-#recoveries-table th:nth-child(29),
-#recoveries-table td:nth-child(29) {
+#recoveries-table:not(.hide-recoveries-columns) th:nth-child(11),
+#recoveries-table:not(.hide-recoveries-columns) td:nth-child(11),
+#recoveries-table:not(.hide-recoveries-columns) th:nth-child(22),
+#recoveries-table:not(.hide-recoveries-columns) td:nth-child(22),
+#recoveries-table:not(.hide-recoveries-columns) th:nth-child(28),
+#recoveries-table:not(.hide-recoveries-columns) td:nth-child(28) {
   border-right: 2px solid rgba(39, 47, 41, 0.34);
 }
 
-/* When recoveries hidden-columns mode is ON, boundaries shift left. */
+/* In hidden-columns mode, group 3 ends one column earlier. */
 #recoveries-table.hide-recoveries-columns th:nth-child(11),
 #recoveries-table.hide-recoveries-columns td:nth-child(11),
 #recoveries-table.hide-recoveries-columns th:nth-child(22),
 #recoveries-table.hide-recoveries-columns td:nth-child(22),
-#recoveries-table.hide-recoveries-columns th:nth-child(29),
-#recoveries-table.hide-recoveries-columns td:nth-child(29) {
+#recoveries-table.hide-recoveries-columns th:nth-child(27),
+#recoveries-table.hide-recoveries-columns td:nth-child(27) {
   border-right: 2px solid rgba(39, 47, 41, 0.34);
 }
 
