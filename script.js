@@ -1995,12 +1995,29 @@ function renderShowWiseRecoveriesEngineTable(tableId, computed) {
 
   const thead = document.createElement("thead");
   const headerRow1 = document.createElement("tr");
+  const getRecoveriesHeaderBandClass = (columnIndex) => {
+    if (columnIndex <= 0) return "";
+    if (columnIndex <= 11) return "recoveries-header-band-blue";
+    if (columnIndex <= 22) return "recoveries-header-band-yellow";
+    if (columnIndex <= 28) return "recoveries-header-band-blue";
+    return "recoveries-header-band-yellow";
+  };
+  const isRecoveriesHeaderBandBoundary = (columnIndex) =>
+    columnIndex === 11 || columnIndex === 22 || columnIndex === 28;
 
   headerRow1Cells.forEach((cellValue, index) => {
     const th1 = document.createElement("th");
     th1.textContent = cellValue;
     if (index === 0) {
       th1.classList.add("recoveries-show-title");
+    } else {
+      const bandClass = getRecoveriesHeaderBandClass(index);
+      if (bandClass) {
+        th1.classList.add(bandClass);
+      }
+      if (isRecoveriesHeaderBandBoundary(index)) {
+        th1.classList.add("recoveries-header-band-boundary");
+      }
     }
     headerRow1.appendChild(th1);
   });
@@ -2043,14 +2060,23 @@ function renderShowWiseRecoveriesEngineTable(tableId, computed) {
   const headerRow3 = document.createElement("tr");
   blockHeaders.forEach((header, index) => {
     const th = document.createElement("th");
-    const normalizedHeader = normalizeString(header);
+    const normalizedHeader = normalizeString(header).replace(/\s+/g, " ").trim();
     if (normalizedHeader === "payback d15 cpnssw") {
-      th.textContent = "Payback D15\nCPNSSW";
-      th.classList.add("recoveries-header-payback-d15-cpnssw");
+      th.textContent = "Payback D15";
     } else {
       th.textContent = header;
     }
-    if (index === 0) th.classList.add("metric-primary");
+    if (index === 0) {
+      th.classList.add("metric-primary");
+    } else {
+      const bandClass = getRecoveriesHeaderBandClass(index);
+      if (bandClass) {
+        th.classList.add(bandClass);
+      }
+      if (isRecoveriesHeaderBandBoundary(index)) {
+        th.classList.add("recoveries-header-band-boundary");
+      }
+    }
     headerRow3.appendChild(th);
   });
 
