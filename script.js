@@ -2177,6 +2177,20 @@ function renderShowWiseRecoveriesEngineTable(tableId, computed) {
       }
     });
 
+    // Business rule: within iOS sub-segments, keep only Cost cells for Facebook/Google/Tik Tok.
+    const isIosSubsegment =
+      row.indentLevel &&
+      normalizeString(activePlatform) === "ios" &&
+      new Set(["facebook", "google", "tik tok", "tiktok"]).has(normalizeString(segmentName));
+    if (isIosSubsegment) {
+      const costColumnIndexes = new Set([4, 15, 25, 30]);
+      for (let index = 1; index < mainValues.length; index += 1) {
+        if (!costColumnIndexes.has(index)) {
+          mainValues[index] = "";
+        }
+      }
+    }
+
     secondaryValues.forEach((_, index) => {
       if (index === 0) {
         return;
