@@ -984,6 +984,16 @@ tbody tr:hover td {
   border-right: 2px solid rgba(39, 47, 41, 0.34);
 }
 
+/* When recoveries hidden-columns mode is ON, boundaries shift left. */
+#recoveries-table.hide-recoveries-columns th:nth-child(11),
+#recoveries-table.hide-recoveries-columns td:nth-child(11),
+#recoveries-table.hide-recoveries-columns th:nth-child(22),
+#recoveries-table.hide-recoveries-columns td:nth-child(22),
+#recoveries-table.hide-recoveries-columns th:nth-child(29),
+#recoveries-table.hide-recoveries-columns td:nth-child(29) {
+  border-right: 2px solid rgba(39, 47, 41, 0.34);
+}
+
 #recoveries-table.hide-recoveries-columns th:nth-child(7),
 #recoveries-table.hide-recoveries-columns td:nth-child(7),
 #recoveries-table.hide-recoveries-columns th:nth-child(8),
