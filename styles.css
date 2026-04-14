@@ -717,6 +717,9 @@ td {
   width: 100%;
   margin: 0 auto;
   table-layout: fixed;
+  border: 1.5px solid rgba(115, 106, 73, 0.42);
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 .spends-plan-table td,
@@ -727,6 +730,13 @@ td {
   overflow-wrap: anywhere;
   word-break: break-word;
   line-height: 1.35;
+  border-right: 1px solid rgba(143, 132, 96, 0.36);
+  border-bottom: 1px solid rgba(143, 132, 96, 0.32);
+}
+
+#spends-plan-tracking-tab .spends-plan-table tr > th:last-child,
+#spends-plan-tracking-tab .spends-plan-table tr > td:last-child {
+  border-right: 1px solid rgba(143, 132, 96, 0.36);
 }
 
 .spends-plan-table.spends-table-1 td:first-child,
