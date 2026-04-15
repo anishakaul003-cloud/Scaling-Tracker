@@ -1176,6 +1176,22 @@ function splitSpendsPlanSections(rows) {
   sections[currentIndex] = [];
 
   const getFirstNonEmptyCell = (rowValues) => rowValues.find((cell) => String(cell ?? "").trim() !== "") || "";
+  const trimTrailingEmptyRows = (sectionRows) => {
+    if (!Array.isArray(sectionRows) || sectionRows.length === 0) {
+      return sectionRows || [];
+    }
+    const trimmed = sectionRows.slice();
+    while (trimmed.length > 0) {
+      const lastRowEntry = trimmed[trimmed.length - 1];
+      const lastRowValues = Array.isArray(lastRowEntry) ? lastRowEntry : lastRowEntry.values;
+      const hasContent = lastRowValues.some((cell) => String(cell ?? "").trim() !== "");
+      if (hasContent) {
+        break;
+      }
+      trimmed.pop();
+    }
+    return trimmed;
+  };
 
   rows.forEach((rowEntry) => {
     const rowValues = Array.isArray(rowEntry) ? rowEntry : rowEntry.values;
@@ -1206,19 +1222,10 @@ function splitSpendsPlanSections(rows) {
     }
   });
 
-  const cleaned = sections.filter((section) => section && section.length > 0);
-  if (cleaned[0]) {
-    while (cleaned[0].length > 0) {
-      const lastRow = cleaned[0][cleaned[0].length - 1];
-      const values = Array.isArray(lastRow) ? lastRow : lastRow.values;
-      const hasContent = values.some((cell) => String(cell ?? "").trim() !== "");
-      if (hasContent) {
-        break;
-      }
-      cleaned[0].pop();
-    }
-  }
-  return cleaned;
+  return sections
+    .filter((section) => section && section.length > 0)
+    .map((section) => trimTrailingEmptyRows(section))
+    .filter((section) => section.length > 0);
 }
 
 function renderSpendsPlanTables(containerId, sections, options = {}) {
