@@ -167,17 +167,30 @@
     window.__SCALING_TRACKER_LIVE_META__ = payload.meta || {};
   }
 
-  function updatePageMeta(refreshResult, payload) {
+  function getPayloadGeneratedAt(payload) {
+    return payload?.meta?.generatedAt || payload?.meta?.refreshedAt || "";
+  }
+
+  function updatePageMeta(state, payload) {
     if (!pageMeta) {
       return;
     }
-    const generatedAt = payload?.meta?.generatedAt || payload?.meta?.refreshedAt;
-    if (refreshResult?.ok) {
+
+    const generatedAt = getPayloadGeneratedAt(payload);
+    if (state === "synced") {
       pageMeta.textContent = generatedAt
         ? `Live data synced · Last update: ${generatedAt}`
         : "Live data synced";
       return;
     }
+
+    if (state === "syncing") {
+      pageMeta.textContent = generatedAt
+        ? `Showing recent snapshot · Last update: ${generatedAt} · Syncing latest data in background...`
+        : "Showing recent snapshot · Syncing latest data in background...";
+      return;
+    }
+
     pageMeta.textContent = generatedAt
       ? `Showing last successful snapshot · Last update: ${generatedAt}`
       : "Showing last successful snapshot";
@@ -200,34 +213,76 @@
     });
   }
 
+  async function refreshInBackground(fallbackPayload) {
+    updatePageMeta("syncing", fallbackPayload);
+    const refreshResult = await triggerServerRefresh();
+    let payload = extractPayloadFromRefreshResult(refreshResult);
+
+    if (!payload) {
+      try {
+        payload = await loadLiveDataJson();
+        validateLiveData(payload);
+      } catch (error) {
+        payload = fallbackPayload;
+        console.warn("[ScalingTracker] Could not load refreshed live-data.json:", error);
+      }
+    }
+
+    if (payload) {
+      installRuntimeGlobals(payload);
+    }
+
+    if (refreshResult.ok) {
+      updatePageMeta("synced", payload || fallbackPayload);
+      return;
+    }
+
+    updatePageMeta("snapshot", payload || fallbackPayload);
+    console.warn("[ScalingTracker] Live refresh failed:", refreshResult.reason || refreshResult);
+  }
+
   async function bootstrapDashboard() {
     showLoader();
     setLoaderError("");
-    setLoaderStatus("Syncing latest data from Google Sheet...");
+    setLoaderStatus("Loading latest snapshot...");
 
-    const refreshResult = await triggerServerRefresh();
-    if (refreshResult.ok) {
-      setLoaderStatus("Latest data synced. Preparing dashboard...");
-    } else {
-      setLoaderStatus("Could not sync live data. Loading last successful snapshot...");
-    }
-
-    let payload = extractPayloadFromRefreshResult(refreshResult);
-    if (!payload) {
+    let payload = null;
+    try {
       payload = await loadLiveDataJson();
       validateLiveData(payload);
-    }
-    installRuntimeGlobals(payload);
-    updatePageMeta(refreshResult, payload);
+    } catch (snapshotError) {
+      setLoaderStatus("Snapshot unavailable. Syncing live data from Google Sheet...");
+      const refreshResult = await triggerServerRefresh();
+      payload = extractPayloadFromRefreshResult(refreshResult);
 
+      if (!payload) {
+        payload = await loadLiveDataJson();
+        validateLiveData(payload);
+      }
+
+      installRuntimeGlobals(payload);
+      updatePageMeta(refreshResult.ok ? "synced" : "snapshot", payload);
+      setLoaderStatus("Rendering dashboard...");
+      await loadDashboardScript();
+      hideLoader();
+
+      if (!refreshResult.ok) {
+        console.warn("[ScalingTracker] Live refresh failed:", refreshResult.reason || refreshResult);
+      }
+      return;
+    }
+
+    installRuntimeGlobals(payload);
+    updatePageMeta("snapshot", payload);
     setLoaderStatus("Rendering dashboard...");
     await loadDashboardScript();
     hideLoader();
 
-    if (!refreshResult.ok) {
-      // Keep non-blocking signal in console for operational visibility.
-      console.warn("[ScalingTracker] Live refresh failed:", refreshResult.reason || refreshResult);
-    }
+    // Keep initial load fast by syncing in background after the UI is visible.
+    refreshInBackground(payload).catch((error) => {
+      updatePageMeta("snapshot", payload);
+      console.warn("[ScalingTracker] Background refresh failed:", error);
+    });
   }
 
   async function runBootstrap() {
