@@ -4,9 +4,6 @@
     dataUrl: "./live-data.json",
     requestTimeoutMs: 90000
   };
-  const SNAPSHOT_CACHE_NAME = "scaling-tracker-live-snapshots-v1";
-  const SNAPSHOT_LATEST_CACHE_KEY = "/__scaling-tracker__/snapshot/latest";
-  const SNAPSHOT_PREVIOUS_CACHE_KEY = "/__scaling-tracker__/snapshot/previous";
 
   const config = Object.assign({}, DEFAULT_CONFIG, window.SCALING_TRACKER_CONFIG || {});
   const loaderRoot = document.getElementById("app-loading-screen");
@@ -14,7 +11,6 @@
   const loaderError = document.getElementById("app-loading-error");
   const retryButton = document.getElementById("app-loading-retry");
   const pageMeta = document.querySelector(".page-meta");
-  let backgroundRefreshPromise = null;
 
   function setLoaderStatus(text) {
     if (loaderStatus) {
@@ -78,67 +74,6 @@
     }
   }
 
-  function supportsSnapshotCache() {
-    return typeof window !== "undefined" && typeof window.caches !== "undefined";
-  }
-
-  async function readCachedSnapshotByKey(cache, key) {
-    const response = await cache.match(key);
-    if (!response) {
-      return null;
-    }
-    const payload = await response.json();
-    validateLiveData(payload);
-    return payload;
-  }
-
-  async function loadCachedSnapshotPayload() {
-    if (!supportsSnapshotCache()) {
-      return null;
-    }
-
-    try {
-      const cache = await caches.open(SNAPSHOT_CACHE_NAME);
-      const latestPayload = await readCachedSnapshotByKey(cache, SNAPSHOT_LATEST_CACHE_KEY);
-      if (latestPayload) {
-        return latestPayload;
-      }
-      const previousPayload = await readCachedSnapshotByKey(cache, SNAPSHOT_PREVIOUS_CACHE_KEY);
-      if (previousPayload) {
-        return previousPayload;
-      }
-    } catch (error) {
-      console.warn("[ScalingTracker] Could not read cached snapshot payload:", error);
-    }
-    return null;
-  }
-
-  async function persistSnapshotPayload(payload) {
-    if (!supportsSnapshotCache()) {
-      return;
-    }
-
-    try {
-      const cache = await caches.open(SNAPSHOT_CACHE_NAME);
-      const existingLatest = await cache.match(SNAPSHOT_LATEST_CACHE_KEY);
-      if (existingLatest) {
-        await cache.put(SNAPSHOT_PREVIOUS_CACHE_KEY, existingLatest.clone());
-      }
-      const serializedPayload = JSON.stringify(payload);
-      await cache.put(
-        SNAPSHOT_LATEST_CACHE_KEY,
-        new Response(serializedPayload, {
-          headers: {
-            "Content-Type": "application/json; charset=utf-8",
-            "Cache-Control": "no-store"
-          }
-        })
-      );
-    } catch (error) {
-      console.warn("[ScalingTracker] Could not persist snapshot payload:", error);
-    }
-  }
-
   async function loadLiveDataJson() {
     const url = `${config.dataUrl}?cacheBust=${Date.now()}`;
     const response = await withTimeout(
@@ -158,37 +93,6 @@
       throw new Error("Live data payload is not an object");
     }
     return payload;
-  }
-
-  async function resolveInitialPayload() {
-    const cachedSnapshotPayload = await loadCachedSnapshotPayload();
-    if (cachedSnapshotPayload) {
-      return { payload: cachedSnapshotPayload, source: "cache" };
-    }
-
-    try {
-      const filePayload = await loadLiveDataJson();
-      validateLiveData(filePayload);
-      return { payload: filePayload, source: "file" };
-    } catch (_) {
-      return { payload: null, source: null };
-    }
-  }
-
-  async function refreshPayloadFromServer() {
-    const refreshResult = await triggerServerRefresh();
-    let payload = extractPayloadFromRefreshResult(refreshResult);
-
-    if (!payload && refreshResult.ok) {
-      try {
-        payload = await loadLiveDataJson();
-        validateLiveData(payload);
-      } catch (_) {
-        payload = null;
-      }
-    }
-
-    return { refreshResult, payload };
   }
 
   function extractPayloadFromRefreshResult(refreshResult) {
@@ -299,58 +203,30 @@
   async function bootstrapDashboard() {
     showLoader();
     setLoaderError("");
-    setLoaderStatus("Loading latest saved snapshot...");
+    setLoaderStatus("Syncing latest data from Google Sheet...");
 
-    const initialPayloadResult = await resolveInitialPayload();
-    const initialPayload = initialPayloadResult.payload;
-
-    if (!initialPayload) {
-      setLoaderStatus("Syncing latest data from Google Sheet...");
-      const blockingRefreshResult = await refreshPayloadFromServer();
-      if (!blockingRefreshResult.payload) {
-        throw new Error(
-          blockingRefreshResult.refreshResult?.reason || "Could not load snapshot or live data"
-        );
-      }
-
-      installRuntimeGlobals(blockingRefreshResult.payload);
-      updatePageMeta(blockingRefreshResult.refreshResult, blockingRefreshResult.payload);
-      await persistSnapshotPayload(blockingRefreshResult.payload);
-      setLoaderStatus("Rendering dashboard...");
-      await loadDashboardScript();
-      hideLoader();
-      return;
+    const refreshResult = await triggerServerRefresh();
+    if (refreshResult.ok) {
+      setLoaderStatus("Latest data synced. Preparing dashboard...");
+    } else {
+      setLoaderStatus("Could not sync live data. Loading last successful snapshot...");
     }
 
-    installRuntimeGlobals(initialPayload);
-    updatePageMeta({ ok: false }, initialPayload);
-    setLoaderStatus(
-      initialPayloadResult.source === "cache"
-        ? "Rendering dashboard from latest saved snapshot..."
-        : "Rendering dashboard..."
-    );
+    let payload = extractPayloadFromRefreshResult(refreshResult);
+    if (!payload) {
+      payload = await loadLiveDataJson();
+      validateLiveData(payload);
+    }
+    installRuntimeGlobals(payload);
+    updatePageMeta(refreshResult, payload);
+
+    setLoaderStatus("Rendering dashboard...");
     await loadDashboardScript();
     hideLoader();
 
-    if (!backgroundRefreshPromise) {
-      backgroundRefreshPromise = (async () => {
-        const backgroundRefreshResult = await refreshPayloadFromServer();
-        if (backgroundRefreshResult.payload) {
-          installRuntimeGlobals(backgroundRefreshResult.payload);
-          updatePageMeta(backgroundRefreshResult.refreshResult, backgroundRefreshResult.payload);
-          await persistSnapshotPayload(backgroundRefreshResult.payload);
-          return;
-        }
-
-        if (!backgroundRefreshResult.refreshResult?.ok) {
-          console.warn(
-            "[ScalingTracker] Live refresh failed:",
-            backgroundRefreshResult.refreshResult?.reason || backgroundRefreshResult.refreshResult
-          );
-        }
-      })().finally(() => {
-        backgroundRefreshPromise = null;
-      });
+    if (!refreshResult.ok) {
+      // Keep non-blocking signal in console for operational visibility.
+      console.warn("[ScalingTracker] Live refresh failed:", refreshResult.reason || refreshResult);
     }
   }
 
